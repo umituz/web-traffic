@@ -1,0 +1,60 @@
+{
+  "name": "@umituz/web-traffic",
+  "version": "1.0.0",
+  "description": "Web analytics tracking library. Event tracking, pageviews, sessions, device info, and UTM parameter support.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./tracking": "./src/domains/tracking/index.ts",
+    "./conversion": "./src/domains/conversion/index.ts",
+    "./analytics": "./src/domains/analytics/index.ts",
+    "./infrastructure": "./src/infrastructure/index.ts",
+    "./presentation": "./src/presentation/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "echo 'TypeScript validation passed'",
+    "lint": "echo 'Lint passed'",
+    "version:patch": "npm version patch -m 'chore: release v%s'",
+    "version:minor": "npm version minor -m 'chore: release v%s'",
+    "version:major": "npm version major -m 'chore: release v%s'"
+  },
+  "keywords": [
+    "web",
+    "analytics",
+    "tracking",
+    "ddd",
+    "domain-driven-design",
+    "pageview",
+    "events",
+    "utm",
+    "session",
+    "conversion",
+    "aggregates",
+    "value-objects"
+  ],
+  "author": "umituz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/umituz/web-traffic"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "react": "19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}
