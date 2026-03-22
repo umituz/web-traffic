@@ -4,11 +4,12 @@
  */
 
 import type { Event } from '../entities/event.entity';
+import type { Pageview } from '../entities/pageview.entity';
 import type { EventId } from '../value-objects/event-id.vo';
 import type { SessionId } from '../value-objects/session-id.vo';
 
 export interface IEventRepository {
-  save(event: Event): Promise<void>;
+  save(event: Event | Pageview): Promise<void>;
   findById(id: EventId): Promise<Event | null>;
   findBySessionId(sessionId: SessionId): Promise<Event[]>;
   delete(id: EventId): Promise<void>;

@@ -32,10 +32,12 @@ class WebTrafficService {
   private eventRepo: HTTPEventRepository | null = null;
   private pageviewRepo: HTTPPageviewRepository | null = null;
   private sessionRepo: LocalSessionRepository | null = null;
+  private originalPushState: typeof history.pushState | null = null;
+  private originalReplaceState: typeof history.replaceState | null = null;
+  private popStateHandler: (() => void) | null = null;
 
   initialize(config: WebTrafficConfig): void {
     if (this.initialized) {
-      console.warn('WebTrafficService already initialized');
       return;
     }
 
@@ -53,8 +55,9 @@ class WebTrafficService {
       this.pageviewRepo
     );
 
-    // Get or create session
-    this.initializeSession();
+    // Get or create session - this is async but we don't await it
+    // The service will return "not initialized" errors if called before session is ready
+    void this.initializeSession();
 
     // Setup auto-tracking if enabled
     if (config.autoTrack && typeof window !== 'undefined') {
@@ -129,13 +132,23 @@ class WebTrafficService {
   private getOrCreateDeviceId(): string {
     if (typeof window === 'undefined') return '';
 
-    let deviceId = localStorage.getItem('wt_device_id');
-    if (!deviceId) {
-      deviceId = `device-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-      localStorage.setItem('wt_device_id', deviceId);
+    try {
+      let deviceId = localStorage.getItem('wt_device_id');
+      if (!deviceId) {
+        const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+        deviceId = `device-${uniqueId}`;
+        localStorage.setItem('wt_device_id', deviceId);
+      }
+      return deviceId;
+    } catch {
+      // Storage unavailable - generate temporary device ID
+      const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+      return `device-${uniqueId}`;
     }
-
-    return deviceId;
   }
 
   private getUTMFromURL() {
@@ -159,30 +172,52 @@ class WebTrafficService {
     if (typeof window === 'undefined') return;
 
     // Track initial pageview
-    this.trackPageView();
+    void this.trackPageView();
 
     // Track SPA navigation
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
+    this.originalPushState = history.pushState;
+    this.originalReplaceState = history.replaceState;
 
     history.pushState = (...args) => {
-      originalPushState.apply(history, args);
-      this.trackPageView();
+      this.originalPushState!.apply(history, args);
+      void this.trackPageView();
     };
 
     history.replaceState = (...args) => {
-      originalReplaceState.apply(history, args);
-      this.trackPageView();
+      this.originalReplaceState!.apply(history, args);
+      void this.trackPageView();
     };
 
-    window.addEventListener('popstate', () => {
-      this.trackPageView();
-    });
+    this.popStateHandler = () => {
+      void this.trackPageView();
+    };
+    window.addEventListener('popstate', this.popStateHandler);
   }
 
   destroy(): void {
+    // Restore original history methods
+    if (this.originalPushState && typeof history !== 'undefined') {
+      history.pushState = this.originalPushState;
+      this.originalPushState = null;
+    }
+    if (this.originalReplaceState && typeof history !== 'undefined') {
+      history.replaceState = this.originalReplaceState;
+      this.originalReplaceState = null;
+    }
+
+    // Remove popstate event listener
+    if (this.popStateHandler && typeof window !== 'undefined') {
+      window.removeEventListener('popstate', this.popStateHandler);
+      this.popStateHandler = null;
+    }
+
     this.eventRepo?.destroy();
     this.initialized = false;
+    this.commandService = null;
+    this.currentSession = null;
+    this.eventRepo = null;
+    this.pageviewRepo = null;
+    this.sessionRepo = null;
   }
 }
 

@@ -32,13 +32,11 @@ export class HTTPAnalyticsRepository implements IAnalyticsRepository {
       });
 
       if (!response.ok) {
-        console.error('Analytics fetch failed:', response.statusText);
         return null;
       }
 
       return await response.json();
-    } catch (error) {
-      console.error('Analytics error:', error);
+    } catch {
       return null;
     }
   }

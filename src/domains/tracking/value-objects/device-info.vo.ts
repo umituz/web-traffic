@@ -148,9 +148,12 @@ function parseOS(userAgent: string): OSInfo {
 }
 
 function detectDeviceType(userAgent: string, screenWidth?: number): DeviceType {
+  const MOBILE_BREAKPOINT = 768;
+  const TABLET_BREAKPOINT = 1024;
+
   if (screenWidth) {
-    if (screenWidth < 768) return 'mobile';
-    if (screenWidth < 1024) return 'tablet';
+    if (screenWidth < MOBILE_BREAKPOINT) return 'mobile';
+    if (screenWidth < TABLET_BREAKPOINT) return 'tablet';
     return 'desktop';
   }
 

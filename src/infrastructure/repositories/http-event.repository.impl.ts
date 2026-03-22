@@ -24,17 +24,23 @@ export class HTTPEventRepository implements IEventRepository {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly FLUSH_INTERVAL = 30000; // 30 seconds
   private readonly MAX_QUEUE_SIZE = 100;
+  private readonly FLUSH_THRESHOLD = 10; // Flush when queue reaches this size
+  private beforeUnloadHandler: (() => void) | null = null;
+  private isFlushing = false;
 
   constructor(private readonly config: HTTPRepositoryConfig) {
     this.startFlushTimer();
     if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => this.flush());
+      this.beforeUnloadHandler = () => {
+        void this.flush();
+      };
+      window.addEventListener('beforeunload', this.beforeUnloadHandler);
     }
   }
 
   async save(event: Event): Promise<void> {
     this.queue.push({ event, timestamp: Date.now() });
-    if (this.queue.length >= 10) {
+    if (this.queue.length >= this.FLUSH_THRESHOLD) {
       await this.flush();
     }
   }
@@ -60,8 +66,11 @@ export class HTTPEventRepository implements IEventRepository {
   }
 
   private async flush(): Promise<void> {
-    if (this.queue.length === 0) return;
+    if (this.queue.length === 0 || this.isFlushing) {
+      return;
+    }
 
+    this.isFlushing = true;
     const items = [...this.queue];
     this.queue = [];
 
@@ -79,20 +88,25 @@ export class HTTPEventRepository implements IEventRepository {
       });
 
       if (!response.ok) {
-        console.error('Tracking failed:', response.statusText);
         this.queue.unshift(...items);
       }
-    } catch (error) {
-      console.error('Tracking error:', error);
+    } catch {
       this.queue.unshift(...items);
+    } finally {
+      this.isFlushing = false;
     }
   }
 
   destroy(): void {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
+      this.flushTimer = null;
     }
-    this.flush();
+    if (this.beforeUnloadHandler && typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+      this.beforeUnloadHandler = null;
+    }
+    void this.flush();
   }
 }
 
@@ -104,7 +118,7 @@ export class HTTPPageviewRepository implements IPageviewRepository {
   }
 
   async save(pageview: Pageview): Promise<void> {
-    await this.eventRepo.save(pageview as any);
+    await this.eventRepo.save(pageview);
   }
 
   async findById(id: EventId): Promise<Pageview | null> {
@@ -126,7 +140,11 @@ export class LocalSessionRepository implements ISessionRepository {
   async save(session: Session): Promise<void> {
     this.sessions.set(session.id.toString(), session);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('wt_session', JSON.stringify(session.toJSON()));
+      try {
+        localStorage.setItem('wt_session', JSON.stringify(session.toJSON()));
+      } catch {
+        // Storage unavailable - continue without localStorage persistence
+      }
     }
   }
 
@@ -137,15 +155,19 @@ export class LocalSessionRepository implements ISessionRepository {
   async findActive(deviceId: string, timeoutMs: number): Promise<Session | null> {
     if (typeof window === 'undefined') return null;
 
-    const stored = localStorage.getItem('wt_session');
-    if (!stored) return null;
+    try {
+      const stored = localStorage.getItem('wt_session');
+      if (!stored) return null;
 
-    const data = JSON.parse(stored);
-    const sessionId = new SessionId(data.id);
+      const data = JSON.parse(stored);
+      const sessionId = new SessionId(data.id);
 
-    const session = this.sessions.get(sessionId.toString());
-    if (session && session.isActive(timeoutMs)) {
-      return session;
+      const session = this.sessions.get(sessionId.toString());
+      if (session && session.isActive(timeoutMs)) {
+        return session;
+      }
+    } catch {
+      // Storage unavailable or corrupted data
     }
 
     return null;
@@ -154,7 +176,11 @@ export class LocalSessionRepository implements ISessionRepository {
   async delete(id: SessionId): Promise<void> {
     this.sessions.delete(id.toString());
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('wt_session');
+      try {
+        localStorage.removeItem('wt_session');
+      } catch {
+        // Storage unavailable - continue without cleanup
+      }
     }
   }
 }

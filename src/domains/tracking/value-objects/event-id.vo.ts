@@ -30,7 +30,10 @@ export class EventId {
   }
 
   static generate(): EventId {
-    const id = `event-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const id = `event-${uniqueId}`;
     return new EventId(id);
   }
 }

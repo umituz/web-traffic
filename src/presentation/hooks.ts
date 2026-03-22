@@ -9,13 +9,7 @@ import { webTrafficService } from '../infrastructure/tracking/web-traffic.servic
 import { HTTPAnalyticsRepository } from '../infrastructure/analytics/http-analytics.repository.impl';
 import type { AnalyticsQuery } from '../domains/analytics/repositories/analytics.repository.interface';
 import type { AnalyticsData } from '../domains/analytics/entities/analytics.entity';
-
-export interface TrackingCommandResult {
-  success: boolean;
-  eventId?: string;
-  error?: string;
-}
-
+import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
 import type { WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
 
 export interface WebTrafficContextValue {
@@ -29,17 +23,7 @@ export function useWebTraffic(): WebTrafficContextValue {
   const context = useContext(WebTrafficContext);
 
   if (!context) {
-    // If no context, use service directly
-    return {
-      trackEvent: useCallback(async (name: string, properties?: Record<string, unknown>) => {
-        return webTrafficService.trackEvent(name, properties);
-      }, []),
-      trackPageView: useCallback(async (path?: string) => {
-        return webTrafficService.trackPageView(path);
-      }, []),
-      isInitialized: webTrafficService.isInitialized(),
-      config: { apiKey: '' }, // Fallback - context should always be used
-    };
+    throw new Error('useWebTraffic must be used within WebTrafficProvider');
   }
 
   return context;

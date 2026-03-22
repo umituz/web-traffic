@@ -5,7 +5,8 @@
 
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { webTrafficService, type WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
-import type { WebTrafficContextValue, TrackingCommandResult } from './hooks';
+import type { WebTrafficContextValue } from './hooks';
+import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
 
 const TrackingContext = createContext<WebTrafficContextValue | null>(null);
 
