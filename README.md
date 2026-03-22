@@ -1,14 +1,17 @@
 # @umituz/web-traffic
 
-Web analytics tracking library built with **Domain-Driven Design (DDD)** principles. Track pageviews, events, sessions, and conversions with clean architecture.
+Web analytics tracking library built with **Domain-Driven Design (DDD)** principles. Track pageviews, events, sessions, conversions, and affiliate referrals with clean architecture.
 
 ## 🎯 Features
 
 - **✨ DDD Architecture** - Clean separation of domains, aggregates, and value objects
 - **🎯 Event & Pageview Tracking** - Track user interactions and page views
-- **📊 Session Management** - Automatic session creation with aggregate pattern
+- **📊 Session Management** - Automatic session creation with entry/exit page tracking
 - **🔍 UTM Parameters** - Value object-based campaign tracking
 - **💰 Conversion Tracking** - Order aggregate with Money value object
+- **🎯 Affiliate System** - Track referrals with commission calculation
+- **🌐 Multi-site Support** - Track multiple websites with SiteId
+- **📱 Enhanced Device Detection** - Browser, OS, and device type tracking
 - **🔒 Type Safety** - Full TypeScript support with immutable value objects
 - **🧩 Modular** - Subpath exports for tree-shaking
 
@@ -28,7 +31,7 @@ src/
 │   ├── tracking/              # Tracking Bounded Context
 │   │   ├── aggregates/        # Session (aggregate root)
 │   │   ├── entities/          # Event, Pageview
-│   │   ├── value-objects/     # SessionId, EventId, UTMParameters
+│   │   ├── value-objects/     # SessionId, EventId, UTMParameters, DeviceInfo
 │   │   ├── repositories/      # Repository interfaces
 │   │   ├── events/            # Domain events
 │   │   └── application/       # Command services
@@ -36,6 +39,12 @@ src/
 │   │   ├── aggregates/        # Order
 │   │   ├── entities/          # OrderItem
 │   │   ├── value-objects/     # Money
+│   │   ├── repositories/      # Repository interfaces
+│   │   └── events/            # Domain events
+│   ├── affiliate/             # Affiliate Bounded Context
+│   │   ├── aggregates/        # Affiliate (commission tracking)
+│   │   ├── entities/          # AffiliateVisit
+│   │   ├── value-objects/     # AffiliateId, SiteId
 │   │   └── repositories/      # Repository interfaces
 │   └── analytics/             # Analytics Bounded Context
 │       ├── entities/          # AnalyticsData
@@ -132,17 +141,23 @@ import {
   SessionId,
   EventId,
   UTMParameters,
-  Money
+  DeviceInfo
 } from '@umituz/web-traffic/tracking';
+import { Money } from '@umituz/web-traffic/conversion';
+import { SiteId } from '@umituz/web-traffic/affiliate';
 
 // Value objects ensure validity
 const sessionId = new SessionId('session-123'); // Validates format
 const utm = UTMParameters.fromURLSearchParams(searchParams);
+const deviceInfo = DeviceInfo.fromUserAgent(navigator.userAgent);
 
 // Money value object prevents invalid amounts
 const total = new Money(99.99, 'USD');
 const tax = total.multiply(0.1);
 const final = total.add(tax);
+
+// Multi-site support
+const siteId = new SiteId('site-myapp1');
 ```
 
 ### Work with Aggregates
@@ -150,15 +165,22 @@ const final = total.add(tax);
 ```typescript
 import { Session } from '@umituz/web-traffic/tracking';
 import { Order } from '@umituz/web-traffic/conversion';
+import { Affiliate } from '@umituz/web-traffic/affiliate';
 
 // Session aggregate maintains consistency
 const session = new Session({
   id: SessionId.generate(),
-  deviceId: 'device-123'
+  deviceId: 'device-123',
+  siteId: new SiteId('site-abc'),
+  deviceInfo: DeviceInfo.fromUserAgent(navigator.userAgent)
 });
 
 session.addEvent(event);
 session.addPageview(pageview);
+
+// Session journey tracking
+session.getEntryPage(); // '/home'
+session.getExitPage();  // '/checkout'
 
 // Session enforces business rules
 if (session.isExpired()) {
@@ -166,6 +188,19 @@ if (session.isExpired()) {
 }
 
 session.close(); // Cannot add more events
+
+// Affiliate aggregate
+const affiliate = new Affiliate({
+  id: AffiliateId.fromSlug('partner123'),
+  siteId: new SiteId('site-abc'),
+  name: 'Partner ABC',
+  slug: 'partner123',
+  commissionRate: 10, // 10%
+});
+
+affiliate.addVisit(visit);
+affiliate.addConversion(revenue);
+const commission = affiliate.calculateCommission();
 ```
 
 ## 📦 Subpath Exports
@@ -175,10 +210,19 @@ session.close(); // Cannot add more events
 import { WebTrafficProvider, useWebTraffic } from '@umituz/web-traffic/presentation';
 
 // Tracking Domain
-import { Session, EventId, SessionId } from '@umituz/web-traffic/tracking';
+import {
+  Session,
+  SessionId,
+  EventId,
+  UTMParameters,
+  DeviceInfo
+} from '@umituz/web-traffic/tracking';
 
 // Conversion Domain
 import { Order, Money } from '@umituz/web-traffic/conversion';
+
+// Affiliate Domain
+import { Affiliate, AffiliateId, SiteId } from '@umituz/web-traffic/affiliate';
 
 // Analytics Domain
 import type { AnalyticsData, AnalyticsQuery } from '@umituz/web-traffic/analytics';
@@ -213,13 +257,23 @@ class MockEventRepository implements IEventRepository {
 
 ## 📚 DDD Patterns Used
 
-- ✅ **Bounded Contexts** - Tracking, Conversion, Analytics domains
-- ✅ **Aggregates** - Session, Order (consistency boundaries)
-- ✅ **Value Objects** - SessionId, Money, UTMParameters (immutable)
+- ✅ **Bounded Contexts** - Tracking, Conversion, Analytics, Affiliate domains
+- ✅ **Aggregates** - Session, Order, Affiliate (consistency boundaries)
+- ✅ **Value Objects** - SessionId, EventId, UTMParameters, DeviceInfo, Money, SiteId (immutable)
 - ✅ **Repositories** - Interface/implementation separation
-- ✅ **Domain Events** - EventTracked, PageviewTracked
+- ✅ **Domain Events** - EventTracked, PageviewTracked, ConversionRecorded
 - ✅ **Application Services** - TrackingCommandService (use-cases)
 - ✅ **Facade Pattern** - WebTrafficService
+
+## 🚀 Features from Traffic-Source Integration
+
+This package integrates best practices from [traffic-source](https://github.com/mddanishyusuf/traffic-source):
+
+- ✅ **Affiliate Tracking** - Track referrals with `?ref=` parameter
+- ✅ **Multi-site Support** - Manage multiple websites with SiteId
+- ✅ **Enhanced Device Detection** - Browser, OS, and device type detection
+- ✅ **Session Journey** - Track entry/exit pages
+- ✅ **Real-time Session Management** - Session aggregate with timeout handling
 
 ## License
 
