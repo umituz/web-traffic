@@ -5,7 +5,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { webTrafficService, type WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
-import type { WebTrafficContextValue } from './hooks';
+import type { WebTrafficContextValue, TrackingCommandResult } from './hooks';
 
 const TrackingContext = createContext<WebTrafficContextValue | null>(null);
 
@@ -25,10 +25,10 @@ export function WebTrafficProvider({ children, config }: WebTrafficProviderProps
 
   const value = useMemo<WebTrafficContextValue>(
     () => ({
-      trackEvent: async (name, properties) => {
+      trackEvent: async (name: string, properties?: Record<string, unknown>) => {
         return webTrafficService.trackEvent(name, properties);
       },
-      trackPageView: async (path) => {
+      trackPageView: async (path?: string) => {
         return webTrafficService.trackPageView(path);
       },
       isInitialized: webTrafficService.isInitialized(),

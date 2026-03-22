@@ -9,7 +9,6 @@ import { webTrafficService } from '../infrastructure/tracking/web-traffic.servic
 import { HTTPAnalyticsRepository } from '../infrastructure/analytics/http-analytics.repository.impl';
 import type { AnalyticsQuery } from '../domains/analytics/repositories/analytics.repository.interface';
 import type { AnalyticsData } from '../domains/analytics/entities/analytics.entity';
-import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
 
 export interface WebTrafficContextValue {
   readonly trackEvent: (name: string, properties?: Record<string, unknown>) => Promise<TrackingCommandResult>;
@@ -23,10 +22,10 @@ export function useWebTraffic(): WebTrafficContextValue {
   if (!context) {
     // If no context, use service directly
     return {
-      trackEvent: useCallback(async (name, properties) => {
+      trackEvent: useCallback(async (name: string, properties?: Record<string, unknown>) => {
         return webTrafficService.trackEvent(name, properties);
       }, []),
-      trackPageView: useCallback(async (path) => {
+      trackPageView: useCallback(async (path?: string) => {
         return webTrafficService.trackPageView(path);
       }, []),
       isInitialized: webTrafficService.isInitialized(),

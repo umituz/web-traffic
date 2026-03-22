@@ -85,6 +85,10 @@ export class Session {
     return this.siteId;
   }
 
+  getVisitorId(): string {
+    return this.deviceId;
+  }
+
   getDeviceInfo(): DeviceInfo {
     return this.deviceInfo;
   }

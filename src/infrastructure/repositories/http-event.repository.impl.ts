@@ -11,8 +11,8 @@ import type {
 import type { Event } from '../../domains/tracking/entities/event.entity';
 import type { Pageview } from '../../domains/tracking/entities/pageview.entity';
 import type { Session } from '../../domains/tracking/aggregates/session.aggregate';
-import type { EventId } from '../../domains/tracking/value-objects/event-id.vo';
-import type { SessionId } from '../../domains/tracking/value-objects/session-id.vo';
+import { EventId } from '../../domains/tracking/value-objects/event-id.vo';
+import { SessionId } from '../../domains/tracking/value-objects/session-id.vo';
 
 export interface HTTPRepositoryConfig {
   readonly apiUrl: string;

@@ -78,6 +78,7 @@ export class TrackingCommandService {
       const pageview = new Pageview({
         id: pageviewId,
         sessionId: sessionIdVo,
+        siteId: sessionIdVo.getSiteId(),
         path,
         referrer,
         utmParameters,
