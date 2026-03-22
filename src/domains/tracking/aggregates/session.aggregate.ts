@@ -6,33 +6,47 @@
 import type { Pageview } from '../entities/pageview.entity';
 import type { Event } from '../entities/event.entity';
 import { SessionId } from '../value-objects/session-id.vo';
+import type { SiteId } from '../../affiliate/value-objects/site-id.vo';
+import type { DeviceInfo } from '../value-objects/device-info.vo';
 
 export interface SessionCreateInput {
   deviceId: string;
+  siteId: SiteId;
+  deviceInfo: DeviceInfo;
   startTime?: number;
 }
 
 export class Session {
   readonly id: SessionId;
   readonly deviceId: string;
+  readonly siteId: SiteId;
+  readonly deviceInfo: DeviceInfo;
   readonly startTime: number;
   private endTime: number | null;
   private events: Event[];
   private pageviews: Pageview[];
   private eventCount: number;
   private pageviewCount: number;
+  private entryPage: string | null;
+  private exitPage: string | null;
 
   constructor(input: SessionCreateInput & { id: SessionId }) {
     this.id = input.id;
     this.deviceId = input.deviceId;
+    this.siteId = input.siteId;
+    this.deviceInfo = input.deviceInfo;
     this.startTime = input.startTime ?? Date.now();
     this.endTime = null;
     this.events = [];
     this.pageviews = [];
     this.eventCount = 0;
     this.pageviewCount = 0;
+    this.entryPage = null;
+    this.exitPage = null;
     Object.freeze(this.id);
     Object.freeze(this.deviceId);
+    Object.freeze(this.siteId);
+    Object.freeze(this.deviceInfo);
     Object.freeze(this.startTime);
   }
 
@@ -52,7 +66,27 @@ export class Session {
     }
     this.pageviews.push(pageview);
     this.pageviewCount++;
+    this.exitPage = pageview.path;
+    if (!this.entryPage) {
+      this.entryPage = pageview.path;
+    }
     this.updateLastActivity();
+  }
+
+  getEntryPage(): string | null {
+    return this.entryPage;
+  }
+
+  getExitPage(): string | null {
+    return this.exitPage;
+  }
+
+  getSiteId(): SiteId {
+    return this.siteId;
+  }
+
+  getDeviceInfo(): DeviceInfo {
+    return this.deviceInfo;
   }
 
   close(): void {
@@ -102,10 +136,14 @@ export class Session {
     return {
       id: this.id.toString(),
       deviceId: this.deviceId,
+      siteId: this.siteId.toString(),
+      deviceInfo: this.deviceInfo.toJSON(),
       startTime: this.startTime,
       endTime: this.endTime,
       eventCount: this.eventCount,
       pageviewCount: this.pageviewCount,
+      entryPage: this.entryPage,
+      exitPage: this.exitPage,
       duration: this.getDuration(),
     };
   }

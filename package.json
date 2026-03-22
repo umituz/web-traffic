@@ -10,6 +10,7 @@
     "./tracking": "./src/domains/tracking/index.ts",
     "./conversion": "./src/domains/conversion/index.ts",
     "./analytics": "./src/domains/analytics/index.ts",
+    "./affiliate": "./src/domains/affiliate/index.ts",
     "./infrastructure": "./src/infrastructure/index.ts",
     "./presentation": "./src/presentation/index.ts",
     "./package.json": "./package.json"

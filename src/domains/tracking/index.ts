@@ -18,6 +18,8 @@ export type { PageviewCreateInput } from './entities/pageview.entity';
 export { SessionId } from './value-objects/session-id.vo';
 export { EventId } from './value-objects/event-id.vo';
 export { UTMParameters } from './value-objects/utm-parameters.vo';
+export { DeviceInfo } from './value-objects/device-info.vo';
+export type { DeviceType, BrowserInfo, OSInfo } from './value-objects/device-info.vo';
 
 // Repository Interfaces
 export type {

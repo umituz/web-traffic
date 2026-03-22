@@ -5,10 +5,12 @@
 
 import { EventId } from '../value-objects/event-id.vo';
 import type { SessionId } from '../value-objects/session-id.vo';
+import type { SiteId } from '../../affiliate/value-objects/site-id.vo';
 import { UTMParameters } from '../value-objects/utm-parameters.vo';
 
 export interface PageviewCreateInput {
   sessionId: SessionId;
+  siteId: SiteId;
   path: string;
   referrer: string | null;
   utmParameters: UTMParameters | null;
@@ -17,6 +19,7 @@ export interface PageviewCreateInput {
 export class Pageview {
   readonly id: EventId;
   readonly sessionId: SessionId;
+  readonly siteId: SiteId;
   readonly path: string;
   readonly referrer: string | null;
   readonly utmParameters: UTMParameters | null;
@@ -25,6 +28,7 @@ export class Pageview {
   constructor(input: PageviewCreateInput & { id: EventId; timestamp?: number }) {
     this.id = input.id;
     this.sessionId = input.sessionId;
+    this.siteId = input.siteId;
     this.path = input.path;
     this.referrer = input.referrer;
     this.utmParameters = input.utmParameters;
