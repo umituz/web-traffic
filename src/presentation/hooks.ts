@@ -16,10 +16,13 @@ export interface TrackingCommandResult {
   error?: string;
 }
 
+import type { WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
+
 export interface WebTrafficContextValue {
   readonly trackEvent: (name: string, properties?: Record<string, unknown>) => Promise<TrackingCommandResult>;
   readonly trackPageView: (path?: string) => Promise<TrackingCommandResult>;
   readonly isInitialized: boolean;
+  readonly config: WebTrafficConfig;
 }
 
 export function useWebTraffic(): WebTrafficContextValue {
@@ -35,6 +38,7 @@ export function useWebTraffic(): WebTrafficContextValue {
         return webTrafficService.trackPageView(path);
       }, []),
       isInitialized: webTrafficService.isInitialized(),
+      config: { apiKey: '' }, // Fallback - context should always be used
     };
   }
 
@@ -45,6 +49,7 @@ export function useAnalytics(query: AnalyticsQuery) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const { config } = useWebTraffic();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,10 +58,9 @@ export function useAnalytics(query: AnalyticsQuery) {
       setLoading(true);
       setError(null);
 
-      // Note: You'll need to initialize this with proper config
       const repo = new HTTPAnalyticsRepository({
-        apiUrl: 'https://analytics.umituz.com',
-        apiKey: 'your-api-key', // This should come from config
+        apiUrl: config.apiUrl ?? 'https://analytics.umituz.com',
+        apiKey: config.apiKey,
       });
 
       const result = await repo.getAnalytics(query);
@@ -72,7 +76,7 @@ export function useAnalytics(query: AnalyticsQuery) {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, config]);
 
   return { data, loading, error };
 }

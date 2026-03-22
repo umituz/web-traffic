@@ -3,8 +3,7 @@
  * @description React context provider for web-traffic tracking
  */
 
-import type { createContext } from 'react';
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { webTrafficService, type WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
 import type { WebTrafficContextValue, TrackingCommandResult } from './hooks';
 
@@ -33,8 +32,9 @@ export function WebTrafficProvider({ children, config }: WebTrafficProviderProps
         return webTrafficService.trackPageView(path);
       },
       isInitialized: webTrafficService.isInitialized(),
+      config,
     }),
-    []
+    [config]
   );
 
   return <TrackingContext.Provider value={value}>{children}</TrackingContext.Provider>;

@@ -103,7 +103,8 @@ class WebTrafficService {
     if (!this.sessionRepo) return;
 
     const deviceId = this.getOrCreateDeviceId();
-    const existingSession = await this.sessionRepo.findActive(deviceId);
+    const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    const existingSession = await this.sessionRepo.findActive(deviceId, SESSION_TIMEOUT_MS);
 
     if (existingSession) {
       this.currentSession = existingSession;

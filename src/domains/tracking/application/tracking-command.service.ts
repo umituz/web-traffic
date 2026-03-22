@@ -74,22 +74,22 @@ export class TrackingCommandService {
       const sessionIdVo = new SessionId(sessionId);
       const pageviewId = EventId.generate();
 
+      // Get session first to get siteId
+      let session = await this.sessionRepo.findById(sessionIdVo);
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
       const utmParameters = utmParams ? new UTMParameters(utmParams) : null;
 
       const pageview = new Pageview({
         id: pageviewId,
         sessionId: sessionIdVo,
-        siteId: new SessionId(data.sessionId).getSiteId(),
+        siteId: session.siteId,
         path,
         referrer,
         utmParameters,
       });
-
-      // Get or create session
-      let session = await this.sessionRepo.findById(sessionIdVo);
-      if (!session) {
-        throw new Error('Session not found');
-      }
 
       session.addPageview(pageview);
       await this.pageviewRepo.save(pageview);
