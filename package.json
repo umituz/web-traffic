@@ -1,6 +1,6 @@
 {
   "name": "@umituz/web-traffic",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Web analytics tracking library. Event tracking, pageviews, sessions, device info, and UTM parameter support.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
