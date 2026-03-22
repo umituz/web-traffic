@@ -10,7 +10,8 @@ import { Session } from '../../tracking/aggregates/session.aggregate';
 import { Event } from '../../tracking/entities/event.entity';
 import { Pageview } from '../../tracking/entities/pageview.entity';
 import type { ISessionRepository, IEventRepository, IPageviewRepository } from '../../tracking/repositories/event.repository.interface';
-import type { EventTracked, PageviewTracked } from '../../tracking/events';
+import type { EventTracked } from '../events/event-tracked.domain-event';
+import type { PageviewTracked } from '../events/pageview-tracked.domain-event';
 
 export interface TrackingCommandResult {
   success: boolean;
@@ -78,7 +79,7 @@ export class TrackingCommandService {
       const pageview = new Pageview({
         id: pageviewId,
         sessionId: sessionIdVo,
-        siteId: sessionIdVo.getSiteId(),
+        siteId: new SessionId(data.sessionId).getSiteId(),
         path,
         referrer,
         utmParameters,

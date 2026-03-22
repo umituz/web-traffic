@@ -10,6 +10,12 @@ import { HTTPAnalyticsRepository } from '../infrastructure/analytics/http-analyt
 import type { AnalyticsQuery } from '../domains/analytics/repositories/analytics.repository.interface';
 import type { AnalyticsData } from '../domains/analytics/entities/analytics.entity';
 
+export interface TrackingCommandResult {
+  success: boolean;
+  eventId?: string;
+  error?: string;
+}
+
 export interface WebTrafficContextValue {
   readonly trackEvent: (name: string, properties?: Record<string, unknown>) => Promise<TrackingCommandResult>;
   readonly trackPageView: (path?: string) => Promise<TrackingCommandResult>;

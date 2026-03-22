@@ -3,20 +3,21 @@
  * @description Main service for web-traffic (Facade pattern)
  */
 
-import { EventId } from '../domains/tracking/value-objects/event-id.vo';
-import { SessionId } from '../domains/tracking/value-objects/session-id.vo';
-import { SiteId } from '../domains/affiliate/value-objects/site-id.vo';
-import { DeviceInfo } from '../domains/tracking/value-objects/device-info.vo';
-import { Session } from '../domains/tracking/aggregates/session.aggregate';
-import type { Event, Pageview } from '../domains/tracking/entities';
-import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
-import { TrackingCommandService } from '../domains/tracking/application/tracking-command.service';
+import { EventId } from '../../domains/tracking/value-objects/event-id.vo';
+import { SessionId } from '../../domains/tracking/value-objects/session-id.vo';
+import { SiteId } from '../../domains/affiliate/value-objects/site-id.vo';
+import { DeviceInfo } from '../../domains/tracking/value-objects/device-info.vo';
+import { Session } from '../../domains/tracking/aggregates/session.aggregate';
+import type { Event } from '../../domains/tracking/entities/event.entity';
+import type { Pageview } from '../../domains/tracking/entities/pageview.entity';
+import type { TrackingCommandResult } from '../../domains/tracking/application/tracking-command.service';
+import { TrackingCommandService } from '../../domains/tracking/application/tracking-command.service';
 import {
   HTTPEventRepository,
   HTTPPageviewRepository,
   LocalSessionRepository,
-} from './repositories/http-event.repository.impl';
-import { HTTPAnalyticsRepository } from './analytics/http-analytics.repository.impl';
+} from '../repositories/http-event.repository.impl';
+import { HTTPAnalyticsRepository } from '../analytics/http-analytics.repository.impl';
 
 export interface WebTrafficConfig {
   readonly apiKey: string;
@@ -108,9 +109,17 @@ class WebTrafficService {
       this.currentSession = existingSession;
     } else {
       const sessionId = SessionId.generate();
+      const siteId = SiteId.generate();
+      const deviceInfo = DeviceInfo.fromUserAgent(
+        typeof window !== 'undefined' ? navigator.userAgent : '',
+        typeof window !== 'undefined' ? window.screen.width : undefined
+      );
+
       this.currentSession = new Session({
         id: sessionId,
         deviceId,
+        siteId,
+        deviceInfo,
       });
       await this.sessionRepo.save(this.currentSession);
     }
