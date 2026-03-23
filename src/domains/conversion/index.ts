@@ -16,6 +16,3 @@ export { Money } from './value-objects/money.vo';
 
 // Repository Interfaces
 export type { IConversionRepository } from './repositories/conversion.repository.interface';
-
-// Domain Events
-export { ConversionRecorded } from './events/conversion-recorded.domain-event';

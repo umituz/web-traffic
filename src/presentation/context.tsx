@@ -8,7 +8,7 @@ import { webTrafficService, type WebTrafficConfig } from '../infrastructure/trac
 import type { WebTrafficContextValue } from './hooks';
 import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
 
-const TrackingContext = createContext<WebTrafficContextValue | null>(null);
+const WebTrafficContext = createContext<WebTrafficContextValue | null>(null);
 
 export interface WebTrafficProviderProps {
   readonly children: ReactNode;
@@ -26,10 +26,10 @@ export function WebTrafficProvider({ children, config }: WebTrafficProviderProps
 
   const value = useMemo<WebTrafficContextValue>(
     () => ({
-      trackEvent: async (name: string, properties?: Record<string, unknown>) => {
+      trackEvent: (name: string, properties?: Record<string, unknown>) => {
         return webTrafficService.trackEvent(name, properties);
       },
-      trackPageView: async (path?: string) => {
+      trackPageView: (path?: string) => {
         return webTrafficService.trackPageView(path);
       },
       isInitialized: webTrafficService.isInitialized(),
@@ -38,7 +38,7 @@ export function WebTrafficProvider({ children, config }: WebTrafficProviderProps
     [config]
   );
 
-  return <TrackingContext.Provider value={value}>{children}</TrackingContext.Provider>;
+  return <WebTrafficContext.Provider value={value}>{children}</WebTrafficContext.Provider>;
 }
 
-export { TrackingContext as WebTrafficContext };
+export { WebTrafficContext };

@@ -25,8 +25,6 @@ export class Session {
   private endTime: number | null;
   private events: Event[];
   private pageviews: Pageview[];
-  private eventCount: number;
-  private pageviewCount: number;
   private entryPage: string | null;
   private exitPage: string | null;
 
@@ -39,8 +37,6 @@ export class Session {
     this.endTime = null;
     this.events = [];
     this.pageviews = [];
-    this.eventCount = 0;
-    this.pageviewCount = 0;
     this.entryPage = null;
     this.exitPage = null;
     Object.freeze(this.id);
@@ -56,8 +52,6 @@ export class Session {
       throw new Error('Cannot add event to expired session');
     }
     this.events.push(event);
-    this.eventCount++;
-    this.updateLastActivity();
   }
 
   addPageview(pageview: Pageview): void {
@@ -65,12 +59,10 @@ export class Session {
       throw new Error('Cannot add pageview to expired session');
     }
     this.pageviews.push(pageview);
-    this.pageviewCount++;
     this.exitPage = pageview.path;
     if (!this.entryPage) {
       this.entryPage = pageview.path;
     }
-    this.updateLastActivity();
   }
 
   getEntryPage(): string | null {
@@ -117,11 +109,11 @@ export class Session {
   }
 
   getEventCount(): number {
-    return this.eventCount;
+    return this.events.length;
   }
 
   getPageviewCount(): number {
-    return this.pageviewCount;
+    return this.pageviews.length;
   }
 
   getEvents(): Event[] {
@@ -132,10 +124,6 @@ export class Session {
     return [...this.pageviews];
   }
 
-  private updateLastActivity(): void {
-    // Could emit domain event here
-  }
-
   toJSON() {
     return {
       id: this.id.toString(),
@@ -144,8 +132,8 @@ export class Session {
       deviceInfo: this.deviceInfo.toJSON(),
       startTime: this.startTime,
       endTime: this.endTime,
-      eventCount: this.eventCount,
-      pageviewCount: this.pageviewCount,
+      eventCount: this.events.length,
+      pageviewCount: this.pageviews.length,
       entryPage: this.entryPage,
       exitPage: this.exitPage,
       duration: this.getDuration(),

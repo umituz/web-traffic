@@ -179,12 +179,16 @@ class WebTrafficService {
     this.originalReplaceState = history.replaceState;
 
     history.pushState = (...args) => {
-      this.originalPushState!.apply(history, args);
+      if (this.originalPushState) {
+        this.originalPushState.apply(history, args);
+      }
       void this.trackPageView();
     };
 
     history.replaceState = (...args) => {
-      this.originalReplaceState!.apply(history, args);
+      if (this.originalReplaceState) {
+        this.originalReplaceState.apply(history, args);
+      }
       void this.trackPageView();
     };
 

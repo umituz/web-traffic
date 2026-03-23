@@ -28,10 +28,6 @@ export type {
   ISessionRepository,
 } from './repositories/event.repository.interface';
 
-// Domain Events
-export { EventTracked } from './events/event-tracked.domain-event';
-export { PageviewTracked } from './events/pageview-tracked.domain-event';
-
 // Application Services
 export { TrackingCommandService } from './application/tracking-command.service';
 export type { TrackingCommandResult } from './application/tracking-command.service';

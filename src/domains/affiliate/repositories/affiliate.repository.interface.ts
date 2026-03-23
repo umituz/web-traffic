@@ -8,6 +8,7 @@ import type { AffiliateVisit } from '../entities/affiliate-visit.entity';
 import type { AffiliateId } from '../value-objects/affiliate-id.vo';
 import type { SiteId } from '../value-objects/site-id.vo';
 import type { SessionId } from '../../tracking/value-objects/session-id.vo';
+import type { EventId } from '../../tracking/value-objects/event-id.vo';
 
 export interface IAffiliateRepository {
   save(affiliate: Affiliate): Promise<void>;
@@ -19,8 +20,8 @@ export interface IAffiliateRepository {
 
 export interface IAffiliateVisitRepository {
   save(visit: AffiliateVisit): Promise<void>;
-  findById(id: import('../../tracking/value-objects/event-id.vo').EventId): Promise<AffiliateVisit | null>;
+  findById(id: EventId): Promise<AffiliateVisit | null>;
   findByAffiliate(affiliateId: AffiliateId): Promise<AffiliateVisit[]>;
   findByVisitorAndSession(visitorId: string, sessionId: SessionId): Promise<AffiliateVisit[]>;
-  delete(id: import('../../tracking/value-objects/event-id.vo').EventId): Promise<void>;
+  delete(id: EventId): Promise<void>;
 }

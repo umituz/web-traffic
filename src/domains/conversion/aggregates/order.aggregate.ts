@@ -3,9 +3,10 @@
  * @description Manages conversion order and its items
  */
 
-import type { OrderItem } from '../entities/order-item.entity';
+import type { OrderItem, OrderItemCreateInput } from '../entities/order-item.entity';
 import type { EventId } from '../../tracking/value-objects/event-id.vo';
 import { Money } from '../value-objects/money.vo';
+import { createOrderItem } from '../entities/order-item.entity';
 
 export interface OrderCreateInput {
   sessionId: string;
@@ -37,12 +38,13 @@ export class Order {
     // Calculate total and create items
     let totalAmount = 0;
     for (const item of input.items) {
-      const orderItem: OrderItem = {
+      const createInput: OrderItemCreateInput = {
         id: item.id,
         name: item.name,
         price: item.price,
         quantity: item.quantity,
       };
+      const orderItem = createOrderItem(createInput);
       this.items.push(orderItem);
       totalAmount += item.price * item.quantity;
     }
