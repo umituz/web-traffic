@@ -3,14 +3,12 @@
  * @description React hooks for web-traffic tracking
  */
 
-import { useContext, useCallback, useEffect, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { WebTrafficContext } from './context';
-import { webTrafficService } from '../infrastructure/tracking/web-traffic.service';
-import { HTTPAnalyticsRepository } from '../infrastructure/analytics/http-analytics.repository.impl';
+import type { WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
 import type { AnalyticsQuery } from '../domains/analytics/repositories/analytics.repository.interface';
 import type { AnalyticsData } from '../domains/analytics/entities/analytics.entity';
 import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
-import type { WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
 
 export interface WebTrafficContextValue {
   readonly trackEvent: (name: string, properties?: Record<string, unknown>) => Promise<TrackingCommandResult>;
@@ -21,46 +19,78 @@ export interface WebTrafficContextValue {
 
 export function useWebTraffic(): WebTrafficContextValue {
   const context = useContext(WebTrafficContext);
-
   if (!context) {
     throw new Error('useWebTraffic must be used within WebTrafficProvider');
   }
-
   return context;
 }
 
-export function useAnalytics(query: AnalyticsQuery) {
+export interface UseAnalyticsResult {
+  readonly data: AnalyticsData | null;
+  readonly loading: boolean;
+  readonly error: Error | null;
+  readonly refetch: () => void;
+}
+
+export function useAnalytics(query: AnalyticsQuery): UseAnalyticsResult {
+  const { config, isInitialized } = useWebTraffic();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { config } = useWebTraffic();
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const stableQuery = useMemo(
+    () => ({
+      startDate: query.startDate,
+      endDate: query.endDate,
+      path: query.path,
+    }),
+    [query.startDate.getTime(), query.endDate.getTime(), query.path],
+  );
 
   useEffect(() => {
+    if (!isInitialized) {
+      return;
+    }
+
+    const controller = new AbortController();
     let cancelled = false;
 
     async function fetchAnalytics() {
       setLoading(true);
       setError(null);
 
-      const repo = new HTTPAnalyticsRepository({
-        apiUrl: config.apiUrl ?? 'https://analytics.umituz.com',
-        apiKey: config.apiKey,
-      });
+      try {
+        const { webTrafficService } = await import('../infrastructure/tracking/web-traffic.service');
+        const repo = webTrafficService.getAnalyticsRepository();
+        const result = await repo.getAnalytics(stableQuery);
 
-      const result = await repo.getAnalytics(query);
-
-      if (!cancelled) {
-        setData(result);
-        setLoading(false);
+        if (!cancelled) {
+          setData(result);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err : new Error('Unknown error'));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
-    fetchAnalytics();
+    void fetchAnalytics();
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [query, config]);
+  }, [isInitialized, config, stableQuery, reloadToken]);
 
-  return { data, loading, error };
+  return {
+    data,
+    loading,
+    error,
+    refetch: () => setReloadToken((token) => token + 1),
+  };
 }

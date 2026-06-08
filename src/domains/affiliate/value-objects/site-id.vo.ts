@@ -1,36 +1,30 @@
 /**
  * SiteId Value Object
- * @description Immutable value object for site identification (multi-site support)
+ * @description Immutable typed identifier for a tracked site
  */
 
-export class SiteId {
-  private readonly value: string;
+import { BrandedId } from '../../shared/branded-id';
+import { assertString } from '../../../shared/validation';
+import { SITE_ID_MIN_LENGTH, SITE_ID_MAX_LENGTH } from '../../../shared/config';
 
-  constructor(value: string) {
-    if (!value || value.trim().length === 0) {
-      throw new Error('SiteId cannot be empty');
+export class SiteId extends BrandedId {
+  protected static override readonly BRAND: symbol = Symbol('SiteId');
+  private static readonly PREFIX = 'site-';
+
+  private constructor(value: string) {
+    super(value);
+  }
+
+  static of(value: string): SiteId {
+    assertString(value, 'SiteId');
+    if (value.length < SITE_ID_MIN_LENGTH || value.length > SITE_ID_MAX_LENGTH) {
+      throw new Error(`SiteId length must be between ${SITE_ID_MIN_LENGTH} and ${SITE_ID_MAX_LENGTH}`);
     }
-    this.value = value;
-    Object.freeze(this);
-  }
-
-  equals(other: SiteId): boolean {
-    return this.value === other.value;
-  }
-
-  toString(): string {
-    return this.value;
-  }
-
-  getValue(): string {
-    return this.value;
+    BrandedId.validate(value, { prefix: SiteId.PREFIX });
+    return new SiteId(value);
   }
 
   static generate(): SiteId {
-    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-    const id = `site-${uniqueId}`;
-    return new SiteId(id);
+    return new SiteId(BrandedId.withPrefix(SiteId.PREFIX));
   }
 }

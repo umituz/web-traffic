@@ -1,40 +1,56 @@
 /**
  * DeviceInfo Value Object
- * @description Immutable value object for device/browser information
+ * @description Immutable device/browser/OS detection
  */
 
-export type DeviceType = 'mobile' | 'tablet' | 'desktop' | 'unknown';
+import type {
+  BrowserInfo,
+  DeviceType,
+  OSInfo,
+  ScreenSize,
+} from '../../shared/id-types';
+import { classifyDeviceTypeByScreen } from '../../../shared/calculations';
 
-export interface BrowserInfo {
-  readonly name: string | null;
-  readonly version: string | null;
-}
-
-export interface OSInfo {
-  readonly name: string | null;
-  readonly version: string | null;
-}
+export type { BrowserInfo, DeviceType, OSInfo, ScreenSize };
 
 export class DeviceInfo {
   private readonly browser: BrowserInfo;
   private readonly os: OSInfo;
   private readonly deviceType: DeviceType;
-  private readonly screenWidth: number | null;
-  private readonly screenHeight: number | null;
+  private readonly screenSize: ScreenSize;
 
-  constructor(params: {
+  private constructor(params: {
     browser: BrowserInfo;
     os: OSInfo;
     deviceType: DeviceType;
-    screenWidth: number | null;
-    screenHeight: number | null;
+    screenSize: ScreenSize;
   }) {
     this.browser = { ...params.browser };
     this.os = { ...params.os };
     this.deviceType = params.deviceType;
-    this.screenWidth = params.screenWidth;
-    this.screenHeight = params.screenHeight;
+    this.screenSize = { ...params.screenSize };
     Object.freeze(this);
+  }
+
+  static create(params: {
+    browser: BrowserInfo;
+    os: OSInfo;
+    deviceType: DeviceType;
+    screenSize: ScreenSize;
+  }): DeviceInfo {
+    return new DeviceInfo(params);
+  }
+
+  static fromUserAgent(userAgent: string, screenWidth?: number, screenHeight?: number): DeviceInfo {
+    return new DeviceInfo({
+      browser: parseBrowser(userAgent),
+      os: parseOS(userAgent),
+      deviceType: detectDeviceType(userAgent, screenWidth),
+      screenSize: {
+        width: screenWidth ?? null,
+        height: screenHeight ?? null,
+      },
+    });
   }
 
   getBrowser(): BrowserInfo {
@@ -49,11 +65,8 @@ export class DeviceInfo {
     return this.deviceType;
   }
 
-  getScreenSize(): { width: number | null; height: number | null } {
-    return {
-      width: this.screenWidth,
-      height: this.screenHeight,
-    };
+  getScreenSize(): ScreenSize {
+    return { ...this.screenSize };
   }
 
   isMobile(): boolean {
@@ -73,31 +86,15 @@ export class DeviceInfo {
       browser: this.browser,
       os: this.os,
       deviceType: this.deviceType,
-      screenWidth: this.screenWidth,
-      screenHeight: this.screenHeight,
+      screenSize: this.screenSize,
     };
-  }
-
-  static fromUserAgent(userAgent: string, screenWidth?: number): DeviceInfo {
-    // Simple UA parsing (production would use ua-parser-js)
-    const browser = parseBrowser(userAgent);
-    const os = parseOS(userAgent);
-    const deviceType = detectDeviceType(userAgent, screenWidth);
-
-    return new DeviceInfo({
-      browser,
-      os,
-      deviceType,
-      screenWidth: screenWidth ?? null,
-      screenHeight: null,
-    });
   }
 }
 
 function parseBrowser(userAgent: string): BrowserInfo {
-  const chromeMatch = userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
-  if (chromeMatch) {
-    return { name: 'Chrome', version: chromeMatch[1] };
+  const edgeMatch = userAgent.match(/Edg\/(\d+\.\d+\.\d+\.\d+)/);
+  if (edgeMatch) {
+    return { name: 'Edge', version: edgeMatch[1] };
   }
 
   const firefoxMatch = userAgent.match(/Firefox\/(\d+\.\d+)/);
@@ -105,33 +102,33 @@ function parseBrowser(userAgent: string): BrowserInfo {
     return { name: 'Firefox', version: firefoxMatch[1] };
   }
 
-  const safariMatch = userAgent.match(/Safari\/(\d+\.\d+)/);
-  if (safariMatch && !userAgent.includes('Chrome')) {
-    return { name: 'Safari', version: safariMatch[1] };
+  const chromeMatch = userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
+  if (chromeMatch) {
+    return { name: 'Chrome', version: chromeMatch[1] };
   }
 
-  const edgeMatch = userAgent.match(/Edg\/(\d+\.\d+\.\d+\.\d+)/);
-  if (edgeMatch) {
-    return { name: 'Edge', version: edgeMatch[1] };
+  const safariMatch = userAgent.match(/Version\/(\d+\.\d+)/);
+  if (safariMatch && userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+    return { name: 'Safari', version: safariMatch[1] };
   }
 
   return { name: null, version: null };
 }
 
 function parseOS(userAgent: string): OSInfo {
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
+    const iosMatch = userAgent.match(/(?:iPhone|iPad|iPod)\s*(?:OS|CPU OS)\s*(\d+[._]\d+)/);
+    return { name: 'iOS', version: iosMatch ? iosMatch[1].replace('_', '.') : null };
+  }
+
   const windowsMatch = userAgent.match(/Windows NT (\d+\.\d+)/);
   if (windowsMatch) {
     return { name: 'Windows', version: windowsMatch[1] };
   }
 
-  const macMatch = userAgent.match(/Mac OS X (\d+[._]\d+)/);
-  if (macMatch) {
-    return { name: 'macOS', version: macMatch[1].replace('_', '.') };
-  }
-
-  const iosMatch = userAgent.match(/iOS (\d+[._]\d+)/);
-  if (iosMatch) {
-    return { name: 'iOS', version: iosMatch[1].replace('_', '.') };
+  if (/Macintosh|Mac OS X/i.test(userAgent) && !/iPhone|iPad|iPod/i.test(userAgent)) {
+    const macMatch = userAgent.match(/Mac OS X (\d+[._]\d+)/);
+    return { name: 'macOS', version: macMatch ? macMatch[1].replace('_', '.') : null };
   }
 
   const androidMatch = userAgent.match(/Android (\d+\.\d+)/);
@@ -139,8 +136,7 @@ function parseOS(userAgent: string): OSInfo {
     return { name: 'Android', version: androidMatch[1] };
   }
 
-  const linuxMatch = userAgent.includes('Linux');
-  if (linuxMatch) {
+  if (userAgent.includes('Linux')) {
     return { name: 'Linux', version: null };
   }
 
@@ -148,18 +144,17 @@ function parseOS(userAgent: string): OSInfo {
 }
 
 function detectDeviceType(userAgent: string, screenWidth?: number): DeviceType {
-  const MOBILE_BREAKPOINT = 768;
-  const TABLET_BREAKPOINT = 1024;
-
-  if (screenWidth) {
-    if (screenWidth < MOBILE_BREAKPOINT) return 'mobile';
-    if (screenWidth < TABLET_BREAKPOINT) return 'tablet';
-    return 'desktop';
+  if (/iPad/i.test(userAgent)) {
+    return 'tablet';
   }
 
-  const mobile = /Mobile|Android|iPhone|iPad|iPod/i.test(userAgent);
-  if (mobile) {
-    return /iPad/i.test(userAgent) ? 'tablet' : 'mobile';
+  const screenBased = classifyDeviceTypeByScreen(screenWidth);
+  if (screenBased !== null) {
+    return screenBased;
+  }
+
+  if (/Mobile|Android|iPhone|iPod/i.test(userAgent)) {
+    return 'mobile';
   }
 
   return 'desktop';

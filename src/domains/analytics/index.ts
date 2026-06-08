@@ -3,7 +3,6 @@
  * Subpath: @umituz/web-traffic/analytics
  */
 
-// Entities
 export type {
   AnalyticsData,
   TopPage,
@@ -11,7 +10,6 @@ export type {
   ConversionStats,
 } from './entities/analytics.entity';
 
-// Repository Interfaces
 export type {
   IAnalyticsRepository,
   AnalyticsQuery,

@@ -1,6 +1,6 @@
 /**
  * Affiliate Repository Interface
- * @description Repository interface for Affiliate persistence (Domain Layer)
+ * @description Persistence contracts for affiliate aggregates (Domain Layer)
  */
 
 import type { Affiliate } from '../aggregates/affiliate.aggregate';
@@ -14,14 +14,14 @@ export interface IAffiliateRepository {
   save(affiliate: Affiliate): Promise<void>;
   findById(id: AffiliateId): Promise<Affiliate | null>;
   findBySlug(siteId: SiteId, slug: string): Promise<Affiliate | null>;
-  findBySite(siteId: SiteId): Promise<Affiliate[]>;
+  findBySite(siteId: SiteId): Promise<ReadonlyArray<Affiliate>>;
   delete(id: AffiliateId): Promise<void>;
 }
 
 export interface IAffiliateVisitRepository {
   save(visit: AffiliateVisit): Promise<void>;
   findById(id: EventId): Promise<AffiliateVisit | null>;
-  findByAffiliate(affiliateId: AffiliateId): Promise<AffiliateVisit[]>;
-  findByVisitorAndSession(visitorId: string, sessionId: SessionId): Promise<AffiliateVisit[]>;
+  findByAffiliate(affiliateId: AffiliateId): Promise<ReadonlyArray<AffiliateVisit>>;
+  findByVisitorAndSession(visitorId: string, sessionId: SessionId): Promise<ReadonlyArray<AffiliateVisit>>;
   delete(id: EventId): Promise<void>;
 }

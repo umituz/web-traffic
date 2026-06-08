@@ -1,39 +1,26 @@
 /**
  * SessionId Value Object
- * @description Immutable value object for session identification
+ * @description Immutable typed identifier for a tracking session
  */
 
-export class SessionId {
-  private readonly value: string;
+import { BrandedId } from '../../shared/branded-id';
+import { assertHasPrefix } from '../../../shared/validation';
 
-  constructor(value: string) {
-    if (!value || value.trim().length === 0) {
-      throw new Error('SessionId cannot be empty');
-    }
-    if (!value.startsWith('session-')) {
-      throw new Error('SessionId must start with "session-"');
-    }
-    this.value = value;
-    Object.freeze(this);
+export class SessionId extends BrandedId {
+  protected static override readonly BRAND: symbol = Symbol('SessionId');
+  private static readonly PREFIX = 'session-';
+
+  private constructor(value: string) {
+    super(value);
   }
 
-  equals(other: SessionId): boolean {
-    return this.value === other.value;
-  }
-
-  toString(): string {
-    return this.value;
-  }
-
-  getValue(): string {
-    return this.value;
+  static of(value: string): SessionId {
+    BrandedId.validate(value, { prefix: SessionId.PREFIX });
+    assertHasPrefix(value, SessionId.PREFIX);
+    return new SessionId(value);
   }
 
   static generate(): SessionId {
-    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-    const id = `session-${uniqueId}`;
-    return new SessionId(id);
+    return new SessionId(BrandedId.withPrefix(SessionId.PREFIX));
   }
 }

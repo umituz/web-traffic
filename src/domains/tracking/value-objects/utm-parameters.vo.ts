@@ -1,7 +1,17 @@
 /**
  * UTMParameters Value Object
- * @description Immutable value object for UTM campaign parameters
+ * @description Immutable campaign tracking parameters with length validation
  */
+
+import { assertValidUtmValue } from '../../../shared/validation';
+
+export interface UTMParameterSet {
+  readonly source?: string;
+  readonly medium?: string;
+  readonly campaign?: string;
+  readonly term?: string;
+  readonly content?: string;
+}
 
 export class UTMParameters {
   private readonly source?: string;
@@ -10,19 +20,50 @@ export class UTMParameters {
   private readonly term?: string;
   private readonly content?: string;
 
-  constructor(params: {
-    source?: string;
-    medium?: string;
-    campaign?: string;
-    term?: string;
-    content?: string;
-  }) {
+  private constructor(params: UTMParameterSet) {
     this.source = params.source;
     this.medium = params.medium;
     this.campaign = params.campaign;
     this.term = params.term;
     this.content = params.content;
     Object.freeze(this);
+  }
+
+  static of(params: UTMParameterSet): UTMParameters {
+    UTMParameters.validateAll(params);
+    return new UTMParameters({ ...params });
+  }
+
+  static empty(): UTMParameters {
+    return new UTMParameters({});
+  }
+
+  static fromURLSearchParams(searchParams: URLSearchParams): UTMParameters | null {
+    const params: UTMParameterSet = {
+      source: searchParams.get('utm_source') ?? undefined,
+      medium: searchParams.get('utm_medium') ?? undefined,
+      campaign: searchParams.get('utm_campaign') ?? undefined,
+      term: searchParams.get('utm_term') ?? undefined,
+      content: searchParams.get('utm_content') ?? undefined,
+    };
+
+    if (!UTMParameters.hasAny(params)) {
+      return null;
+    }
+
+    return new UTMParameters(params);
+  }
+
+  private static hasAny(params: UTMParameterSet): boolean {
+    return Boolean(params.source || params.medium || params.campaign || params.term || params.content);
+  }
+
+  private static validateAll(params: UTMParameterSet): void {
+    assertValidUtmValue(params.source, 'source');
+    assertValidUtmValue(params.medium, 'medium');
+    assertValidUtmValue(params.campaign, 'campaign');
+    assertValidUtmValue(params.term, 'term');
+    assertValidUtmValue(params.content, 'content');
   }
 
   getSource(): string | undefined {
@@ -46,10 +87,16 @@ export class UTMParameters {
   }
 
   hasAnyUTM(): boolean {
-    return !!(this.source || this.medium || this.campaign || this.term || this.content);
+    return UTMParameters.hasAny({
+      source: this.source,
+      medium: this.medium,
+      campaign: this.campaign,
+      term: this.term,
+      content: this.content,
+    });
   }
 
-  toJSON() {
+  toJSON(): UTMParameterSet {
     return {
       source: this.source,
       medium: this.medium,
@@ -57,19 +104,5 @@ export class UTMParameters {
       term: this.term,
       content: this.content,
     };
-  }
-
-  static fromURLSearchParams(searchParams: URLSearchParams): UTMParameters | null {
-    const source = searchParams.get('utm_source') || undefined;
-    const medium = searchParams.get('utm_medium') || undefined;
-    const campaign = searchParams.get('utm_campaign') || undefined;
-    const term = searchParams.get('utm_term') || undefined;
-    const content = searchParams.get('utm_content') || undefined;
-
-    if (!source && !medium && !campaign && !term && !content) {
-      return null;
-    }
-
-    return new UTMParameters({ source, medium, campaign, term, content });
   }
 }

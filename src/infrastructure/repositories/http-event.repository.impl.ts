@@ -1,34 +1,57 @@
 /**
  * HTTP Event Repository Implementation
- * @description HTTP-based implementation of IEventRepository
+ * @description HTTP-based queue with batch flush, overflow protection, and timeout
  */
 
 import type {
   IEventRepository,
   IPageviewRepository,
   ISessionRepository,
+  TrackableEvent,
 } from '../../domains/tracking/repositories/event.repository.interface';
 import type { Event } from '../../domains/tracking/entities/event.entity';
 import type { Pageview } from '../../domains/tracking/entities/pageview.entity';
-import type { Session } from '../../domains/tracking/aggregates/session.aggregate';
+import { Session, type SessionState } from '../../domains/tracking/aggregates/session.aggregate';
 import { EventId } from '../../domains/tracking/value-objects/event-id.vo';
 import { SessionId } from '../../domains/tracking/value-objects/session-id.vo';
+import { DeviceId } from '../../domains/tracking/value-objects/device-id.vo';
+import { createSafeStorage, type Storage } from '../../shared/safe-storage';
+import { trimQueueOverflow } from '../../shared/calculations';
+import {
+  EVENT_QUEUE_FLUSH_INTERVAL_MS,
+  EVENT_QUEUE_MAX_SIZE,
+  EVENT_QUEUE_FLUSH_THRESHOLD,
+  SESSION_STORAGE_KEY,
+  SESSION_INACTIVITY_TIMEOUT_MS,
+  HTTP_REQUEST_TIMEOUT_MS,
+  HTTP_RETRY_ATTEMPTS,
+} from '../../shared/config';
+import { createHttpClient, HttpError, HttpTimeoutError, type HttpClient } from '../http-client';
 
 export interface HTTPRepositoryConfig {
   readonly apiUrl: string;
   readonly apiKey: string;
 }
 
+interface QueueItem {
+  readonly event: TrackableEvent;
+  readonly timestamp: number;
+}
+
 export class HTTPEventRepository implements IEventRepository {
-  private queue: Array<{ event: Event | Pageview; timestamp: number }> = [];
+  private queue: QueueItem[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly FLUSH_INTERVAL = 30000; // 30 seconds
-  private readonly MAX_QUEUE_SIZE = 100;
-  private readonly FLUSH_THRESHOLD = 10; // Flush when queue reaches this size
   private beforeUnloadHandler: (() => void) | null = null;
   private isFlushing = false;
+  private destroyed = false;
+  private readonly http: HttpClient;
 
-  constructor(private readonly config: HTTPRepositoryConfig) {
+  constructor(config: HTTPRepositoryConfig) {
+    this.http = createHttpClient(
+      config.apiUrl,
+      { 'X-API-Key': config.apiKey },
+      { defaultTimeoutMs: HTTP_REQUEST_TIMEOUT_MS, defaultRetries: HTTP_RETRY_ATTEMPTS },
+    );
     this.startFlushTimer();
     if (typeof window !== 'undefined') {
       this.beforeUnloadHandler = () => {
@@ -38,31 +61,60 @@ export class HTTPEventRepository implements IEventRepository {
     }
   }
 
-  async save(event: Event): Promise<void> {
+  async save(event: TrackableEvent): Promise<void> {
+    if (this.destroyed) {
+      throw new Error('HTTPEventRepository has been destroyed');
+    }
     this.queue.push({ event, timestamp: Date.now() });
-    if (this.queue.length >= this.FLUSH_THRESHOLD) {
+
+    const { dropped } = trimQueueOverflow(this.queue, EVENT_QUEUE_MAX_SIZE);
+    if (dropped.length > 0) {
+      this.queue.splice(0, dropped.length);
+      if (typeof console !== 'undefined') {
+        console.warn(
+          `[HTTPEventRepository] Queue exceeded ${EVENT_QUEUE_MAX_SIZE} items, dropped ${dropped.length} oldest events`,
+        );
+      }
+    }
+
+    if (this.queue.length >= EVENT_QUEUE_FLUSH_THRESHOLD) {
       await this.flush();
     }
   }
 
-  async findById(id: EventId): Promise<Event | null> {
-    // For HTTP repository, we don't fetch individual events
+  async findById(_id: EventId): Promise<Event | null> {
     return null;
   }
 
-  async findBySessionId(sessionId: SessionId): Promise<Event[]> {
-    // Would need an endpoint to fetch events by session
+  async findBySessionId(_sessionId: SessionId): Promise<ReadonlyArray<Event>> {
     return [];
   }
 
-  async delete(id: EventId): Promise<void> {
-    // Implement if needed
+  async delete(_id: EventId): Promise<void> {
+    // Not supported by HTTP repository
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    if (this.beforeUnloadHandler && typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+      this.beforeUnloadHandler = null;
+    }
+    void this.flush();
+  }
+
+  getQueueSize(): number {
+    return this.queue.length;
   }
 
   private startFlushTimer(): void {
     this.flushTimer = setInterval(() => {
-      this.flush();
-    }, this.FLUSH_INTERVAL);
+      void this.flush();
+    }, EVENT_QUEUE_FLUSH_INTERVAL_MS);
   }
 
   private async flush(): Promise<void> {
@@ -75,112 +127,134 @@ export class HTTPEventRepository implements IEventRepository {
     this.queue = [];
 
     try {
-      const response = await fetch(`${this.config.apiUrl}/track`, {
+      await this.http.request<void>('/track', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.config.apiKey,
-        },
-        body: JSON.stringify({
+        body: {
           events: items.map((item) => item.event.toJSON()),
-        }),
+        },
         keepalive: true,
-      });
-
-      if (!response.ok) {
-        this.queue.unshift(...items);
+      } as never);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        if (typeof console !== 'undefined') {
+          console.warn(`[HTTPEventRepository] Flush failed with HTTP ${error.status}, re-queuing`);
+        }
+        this.requeue(items);
+      } else if (error instanceof HttpTimeoutError) {
+        if (typeof console !== 'undefined') {
+          console.warn(`[HTTPEventRepository] Flush timed out, re-queuing`);
+        }
+        this.requeue(items);
+      } else {
+        if (typeof console !== 'undefined') {
+          console.error('[HTTPEventRepository] Unexpected flush error:', error);
+        }
+        this.requeue(items);
       }
-    } catch {
-      this.queue.unshift(...items);
     } finally {
       this.isFlushing = false;
     }
   }
 
-  destroy(): void {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
-    }
-    if (this.beforeUnloadHandler && typeof window !== 'undefined') {
-      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
-      this.beforeUnloadHandler = null;
-    }
-    void this.flush();
+  private requeue(items: ReadonlyArray<QueueItem>): void {
+    this.queue = [...items, ...this.queue].slice(0, EVENT_QUEUE_MAX_SIZE);
   }
 }
 
 export class HTTPPageviewRepository implements IPageviewRepository {
-  private eventRepo: IEventRepository;
-
-  constructor(config: HTTPRepositoryConfig) {
-    this.eventRepo = new HTTPEventRepository(config);
-  }
+  constructor(private readonly eventRepo: IEventRepository) {}
 
   async save(pageview: Pageview): Promise<void> {
     await this.eventRepo.save(pageview);
   }
 
-  async findById(id: EventId): Promise<Pageview | null> {
+  async findById(_id: EventId): Promise<Pageview | null> {
     return null;
   }
 
-  async findBySessionId(sessionId: SessionId): Promise<Pageview[]> {
+  async findBySessionId(_sessionId: SessionId): Promise<ReadonlyArray<Pageview>> {
     return [];
   }
 
-  async delete(id: EventId): Promise<void> {
-    // Implement if needed
+  async delete(_id: EventId): Promise<void> {
+    // Not supported by HTTP repository
   }
 }
 
 export class LocalSessionRepository implements ISessionRepository {
-  private sessions = new Map<string, Session>();
+  private readonly storage: Storage;
+  private readonly cache = new Map<string, Session>();
+
+  constructor(storage: Storage = createSafeStorage()) {
+    this.storage = storage;
+  }
 
   async save(session: Session): Promise<void> {
-    this.sessions.set(session.id.toString(), session);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('wt_session', JSON.stringify(session.toJSON()));
-      } catch {
-        // Storage unavailable - continue without localStorage persistence
-      }
+    this.cache.set(session.id.toString(), session);
+    try {
+      this.storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session.toJSON()));
+    } catch (error) {
+      throw new Error(
+        `Failed to persist session: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
     }
   }
 
   async findById(id: SessionId): Promise<Session | null> {
-    return this.sessions.get(id.toString()) || null;
+    return this.cache.get(id.toString()) ?? null;
   }
 
-  async findActive(deviceId: string, timeoutMs: number): Promise<Session | null> {
-    if (typeof window === 'undefined') return null;
-
-    try {
-      const stored = localStorage.getItem('wt_session');
-      if (!stored) return null;
-
-      const data = JSON.parse(stored);
-      const sessionId = new SessionId(data.id);
-
-      const session = this.sessions.get(sessionId.toString());
-      if (session && session.isActive(timeoutMs)) {
-        return session;
-      }
-    } catch {
-      // Storage unavailable or corrupted data
+  async findActive(
+    deviceId: DeviceId,
+    timeoutMs: number = SESSION_INACTIVITY_TIMEOUT_MS,
+  ): Promise<Session | null> {
+    const stored = this.storage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) {
+      return null;
     }
 
-    return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(stored);
+    } catch {
+      this.storage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+
+    if (!isSessionState(raw) || raw.deviceId !== deviceId.toString()) {
+      this.storage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+
+    const session = Session.fromState(raw);
+    if (!session.isActive(timeoutMs)) {
+      this.storage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+
+    this.cache.set(session.id.toString(), session);
+    return session;
   }
 
   async delete(id: SessionId): Promise<void> {
-    this.sessions.delete(id.toString());
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('wt_session');
-      } catch {
-        // Storage unavailable - continue without cleanup
-      }
-    }
+    this.cache.delete(id.toString());
+    this.storage.removeItem(SESSION_STORAGE_KEY);
   }
+}
+
+function isSessionState(value: unknown): value is SessionState {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  const hasValidEndTime = typeof candidate.endTime === 'number' || candidate.endTime === null;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.deviceId === 'string' &&
+    typeof candidate.siteId === 'string' &&
+    typeof candidate.startTime === 'number' &&
+    hasValidEndTime &&
+    typeof candidate.eventCount === 'number' &&
+    typeof candidate.pageviewCount === 'number'
+  );
 }

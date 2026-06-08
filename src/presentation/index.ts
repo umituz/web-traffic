@@ -4,8 +4,7 @@
  */
 
 export { useWebTraffic, useAnalytics } from './hooks';
-export type { WebTrafficContextValue } from './hooks';
+export type { WebTrafficContextValue, UseAnalyticsResult } from './hooks';
 
-export { WebTrafficProvider } from './context';
-export { WebTrafficContext } from './context';
+export { WebTrafficProvider, WebTrafficContext } from './context';
 export type { WebTrafficProviderProps } from './context';

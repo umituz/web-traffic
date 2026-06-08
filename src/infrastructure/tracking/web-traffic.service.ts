@@ -1,227 +1,193 @@
 /**
  * Web Traffic Service
- * @description Main service for web-traffic (Facade pattern)
+ * @description Facade coordinating tracking collaborators
  */
 
-import { EventId } from '../../domains/tracking/value-objects/event-id.vo';
-import { SessionId } from '../../domains/tracking/value-objects/session-id.vo';
-import { SiteId } from '../../domains/affiliate/value-objects/site-id.vo';
-import { DeviceInfo } from '../../domains/tracking/value-objects/device-info.vo';
-import { Session } from '../../domains/tracking/aggregates/session.aggregate';
-import type { Event } from '../../domains/tracking/entities/event.entity';
-import type { Pageview } from '../../domains/tracking/entities/pageview.entity';
-import type { TrackingCommandResult } from '../../domains/tracking/application/tracking-command.service';
-import { TrackingCommandService } from '../../domains/tracking/application/tracking-command.service';
+import { TrackingCommandService, type TrackingCommandResult } from '../../domains/tracking/application/tracking-command.service';
 import {
   HTTPEventRepository,
   HTTPPageviewRepository,
   LocalSessionRepository,
+  type HTTPRepositoryConfig,
 } from '../repositories/http-event.repository.impl';
-import { HTTPAnalyticsRepository } from '../analytics/http-analytics.repository.impl';
+import { HTTPAnalyticsRepository, type HTTPAnalyticsConfig } from '../analytics/http-analytics.repository.impl';
+import { DeviceIdProvider } from './device-id.provider';
+import { UtmExtractor } from './utm-extractor';
+import { AutoTracker } from './auto-tracker';
+import { SessionManager } from './session-manager';
+import { TypedEventEmitter } from '../../domains/shared/event-emitter';
+import type { WebTrafficEventMap } from '../../domains/events';
+import type { Unsubscribe } from '../../domains/shared/event-emitter';
+import {
+  SessionStartedEvent,
+  SessionClosedEvent,
+} from '../../domains/tracking/events/tracking.events';
+import { DEFAULT_ANALYTICS_API_URL } from '../../shared/config';
+
+export type { HTTPRepositoryConfig, HTTPAnalyticsConfig, TrackingCommandResult };
 
 export interface WebTrafficConfig {
   readonly apiKey: string;
   readonly apiUrl?: string;
   readonly autoTrack?: boolean;
+  readonly sessionTimeoutMs?: number;
 }
 
-class WebTrafficService {
-  private initialized = false;
-  private commandService: TrackingCommandService | null = null;
-  private currentSession: Session | null = null;
+export class WebTrafficService {
   private eventRepo: HTTPEventRepository | null = null;
   private pageviewRepo: HTTPPageviewRepository | null = null;
   private sessionRepo: LocalSessionRepository | null = null;
-  private originalPushState: typeof history.pushState | null = null;
-  private originalReplaceState: typeof history.replaceState | null = null;
-  private popStateHandler: (() => void) | null = null;
+  private analyticsRepo: HTTPAnalyticsRepository | null = null;
+  private commandService: TrackingCommandService | null = null;
+  private sessionManager: SessionManager | null = null;
+  private deviceIdProvider: DeviceIdProvider | null = null;
+  private utmExtractor: UtmExtractor | null = null;
+  private autoTracker: AutoTracker | null = null;
+  private config: WebTrafficConfig | null = null;
+  private sessionUnsubscribe: Unsubscribe | null = null;
+  private readonly emitter = new TypedEventEmitter<WebTrafficEventMap>();
+
+  on = this.emitter.on.bind(this.emitter);
+  once = this.emitter.once.bind(this.emitter);
 
   initialize(config: WebTrafficConfig): void {
-    if (this.initialized) {
+    if (this.config) {
       return;
     }
+    this.config = config;
 
-    const apiUrl = config.apiUrl ?? 'https://analytics.umituz.com';
+    const apiUrl = config.apiUrl ?? DEFAULT_ANALYTICS_API_URL;
+    const repoConfig: HTTPRepositoryConfig = { apiUrl, apiKey: config.apiKey };
 
-    // Initialize repositories
-    this.eventRepo = new HTTPEventRepository({ apiUrl, apiKey: config.apiKey });
-    this.pageviewRepo = new HTTPPageviewRepository({ apiUrl, apiKey: config.apiKey });
+    this.eventRepo = new HTTPEventRepository(repoConfig);
+    this.pageviewRepo = new HTTPPageviewRepository(this.eventRepo);
     this.sessionRepo = new LocalSessionRepository();
 
-    // Initialize command service
+    this.deviceIdProvider = new DeviceIdProvider();
+    this.sessionManager = new SessionManager(
+      this.sessionRepo,
+      () => this.deviceIdProvider!.getOrCreate(),
+    );
+
     this.commandService = new TrackingCommandService(
       this.sessionRepo,
       this.eventRepo,
-      this.pageviewRepo
+      this.pageviewRepo,
     );
 
-    // Get or create session - this is async but we don't await it
-    // The service will return "not initialized" errors if called before session is ready
-    void this.initializeSession();
+    this.utmExtractor = new UtmExtractor();
+    this.analyticsRepo = new HTTPAnalyticsRepository(repoConfig);
 
-    // Setup auto-tracking if enabled
-    if (config.autoTrack && typeof window !== 'undefined') {
-      this.setupAutoTrack();
-    }
+    this.autoTracker = new AutoTracker((path) => {
+      void this.trackPageView(path);
+    });
 
-    this.initialized = true;
+    this.sessionUnsubscribe = this.sessionManager.onSessionReady((session) => {
+      const isResumed = this.eventRepo!.getQueueSize() > 0;
+      this.emitter.emit(
+        'session.started',
+        new SessionStartedEvent({
+          sessionId: session.id.toString(),
+          deviceId: session.deviceId.toString(),
+          isResumed,
+        }),
+      );
+
+      if (this.config?.autoTrack && this.autoTracker) {
+        this.autoTracker.triggerInitial();
+      }
+    });
+
+    void this.sessionManager.initialize();
   }
 
   isInitialized(): boolean {
-    return this.initialized;
+    return this.config !== null;
+  }
+
+  getAnalyticsRepository(): HTTPAnalyticsRepository {
+    this.assertInitialized();
+    return this.analyticsRepo!;
+  }
+
+  getCommandService(): TrackingCommandService {
+    this.assertInitialized();
+    return this.commandService!;
+  }
+
+  getSessionManager(): SessionManager {
+    this.assertInitialized();
+    return this.sessionManager!;
   }
 
   async trackEvent(
     name: string,
-    properties: Record<string, unknown> = {}
+    properties: Record<string, unknown> = {},
   ): Promise<TrackingCommandResult> {
-    if (!this.commandService || !this.currentSession) {
+    if (!this.commandService || !this.sessionManager) {
       return { success: false, error: 'Service not initialized' };
     }
 
-    return this.commandService.trackEvent(
-      this.currentSession.id.toString(),
-      name,
-      properties
-    );
+    const session = this.sessionManager.getCurrent();
+    if (!session) {
+      return { success: false, error: 'Session not ready' };
+    }
+
+    return this.commandService.trackEvent(session.id, name, properties);
   }
 
   async trackPageView(path?: string): Promise<TrackingCommandResult> {
-    if (!this.commandService || !this.currentSession) {
+    if (!this.commandService || !this.sessionManager) {
       return { success: false, error: 'Service not initialized' };
     }
 
-    const currentPath = path ?? (typeof window !== 'undefined' ? window.location.pathname : '/');
-    const referrer = typeof window !== 'undefined' ? document.referrer : null;
-
-    return this.commandService.trackPageview(
-      this.currentSession.id.toString(),
-      currentPath,
-      referrer,
-      this.getUTMFromURL()
-    );
-  }
-
-  private async initializeSession(): Promise<void> {
-    if (!this.sessionRepo) return;
-
-    const deviceId = this.getOrCreateDeviceId();
-    const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-    const existingSession = await this.sessionRepo.findActive(deviceId, SESSION_TIMEOUT_MS);
-
-    if (existingSession) {
-      this.currentSession = existingSession;
-    } else {
-      const sessionId = SessionId.generate();
-      const siteId = SiteId.generate();
-      const deviceInfo = DeviceInfo.fromUserAgent(
-        typeof window !== 'undefined' ? navigator.userAgent : '',
-        typeof window !== 'undefined' ? window.screen.width : undefined
-      );
-
-      this.currentSession = new Session({
-        id: sessionId,
-        deviceId,
-        siteId,
-        deviceInfo,
-      });
-      await this.sessionRepo.save(this.currentSession);
-    }
-  }
-
-  private getOrCreateDeviceId(): string {
-    if (typeof window === 'undefined') return '';
-
-    try {
-      let deviceId = localStorage.getItem('wt_device_id');
-      if (!deviceId) {
-        const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-        deviceId = `device-${uniqueId}`;
-        localStorage.setItem('wt_device_id', deviceId);
-      }
-      return deviceId;
-    } catch {
-      // Storage unavailable - generate temporary device ID
-      const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-      return `device-${uniqueId}`;
-    }
-  }
-
-  private getUTMFromURL() {
-    if (typeof window === 'undefined') return undefined;
-
-    const searchParams = new URLSearchParams(window.location.search);
-    const source = searchParams.get('utm_source') || undefined;
-    const medium = searchParams.get('utm_medium') || undefined;
-    const campaign = searchParams.get('utm_campaign') || undefined;
-    const term = searchParams.get('utm_term') || undefined;
-    const content = searchParams.get('utm_content') || undefined;
-
-    if (!source && !medium && !campaign && !term && !content) {
-      return undefined;
+    const session = this.sessionManager.getCurrent();
+    if (!session) {
+      return { success: false, error: 'Session not ready' };
     }
 
-    return { source, medium, campaign, term, content };
-  }
+    const resolvedPath = path ?? (typeof window !== 'undefined' ? window.location.pathname : '/');
+    const referrer = typeof window !== 'undefined' ? document.referrer || null : null;
+    const utm = this.utmExtractor?.fromCurrentUrl()?.toJSON() ?? undefined;
 
-  private setupAutoTrack(): void {
-    if (typeof window === 'undefined') return;
-
-    // Track initial pageview
-    void this.trackPageView();
-
-    // Track SPA navigation
-    this.originalPushState = history.pushState;
-    this.originalReplaceState = history.replaceState;
-
-    history.pushState = (...args) => {
-      if (this.originalPushState) {
-        this.originalPushState.apply(history, args);
-      }
-      void this.trackPageView();
-    };
-
-    history.replaceState = (...args) => {
-      if (this.originalReplaceState) {
-        this.originalReplaceState.apply(history, args);
-      }
-      void this.trackPageView();
-    };
-
-    this.popStateHandler = () => {
-      void this.trackPageView();
-    };
-    window.addEventListener('popstate', this.popStateHandler);
+    return this.commandService.trackPageview(session.id, resolvedPath, referrer, utm);
   }
 
   destroy(): void {
-    // Restore original history methods
-    if (this.originalPushState && typeof history !== 'undefined') {
-      history.pushState = this.originalPushState;
-      this.originalPushState = null;
-    }
-    if (this.originalReplaceState && typeof history !== 'undefined') {
-      history.replaceState = this.originalReplaceState;
-      this.originalReplaceState = null;
-    }
-
-    // Remove popstate event listener
-    if (this.popStateHandler && typeof window !== 'undefined') {
-      window.removeEventListener('popstate', this.popStateHandler);
-      this.popStateHandler = null;
+    const session = this.sessionManager?.getCurrent();
+    if (session) {
+      this.emitter.emit(
+        'session.closed',
+        new SessionClosedEvent({
+          sessionId: session.id.toString(),
+          durationMs: session.getDuration(),
+        }),
+      );
     }
 
+    this.sessionUnsubscribe?.();
+    this.sessionUnsubscribe = null;
+    this.autoTracker?.stop();
     this.eventRepo?.destroy();
-    this.initialized = false;
-    this.commandService = null;
-    this.currentSession = null;
+    this.sessionManager?.reset();
+
+    this.config = null;
     this.eventRepo = null;
     this.pageviewRepo = null;
     this.sessionRepo = null;
+    this.analyticsRepo = null;
+    this.commandService = null;
+    this.sessionManager = null;
+    this.deviceIdProvider = null;
+    this.utmExtractor = null;
+    this.autoTracker = null;
+    this.emitter.removeAllListeners();
+  }
+
+  private assertInitialized(): void {
+    if (!this.config) {
+      throw new Error('WebTrafficService is not initialized');
+    }
   }
 }
 

@@ -3,42 +3,41 @@
  * @description React context provider for web-traffic tracking
  */
 
-import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
-import { webTrafficService, type WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
+import React, { createContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import type { ReactElement } from 'react';
+import { WebTrafficService, type WebTrafficConfig } from '../infrastructure/tracking/web-traffic.service';
 import type { WebTrafficContextValue } from './hooks';
-import type { TrackingCommandResult } from '../domains/tracking/application/tracking-command.service';
 
-const WebTrafficContext = createContext<WebTrafficContextValue | null>(null);
+export const WebTrafficContext = createContext<WebTrafficContextValue | null>(null);
+
+const defaultService = new WebTrafficService();
 
 export interface WebTrafficProviderProps {
   readonly children: ReactNode;
   readonly config: WebTrafficConfig;
+  readonly service?: WebTrafficService;
 }
 
-export function WebTrafficProvider({ children, config }: WebTrafficProviderProps): React.ReactElement {
-  useEffect(() => {
-    webTrafficService.initialize(config);
+export function WebTrafficProvider({ children, config, service = defaultService }: WebTrafficProviderProps): ReactElement {
+  const configRef = useRef(config);
+  configRef.current = config;
 
+  useEffect(() => {
+    service.initialize(configRef.current);
     return () => {
-      webTrafficService.destroy();
+      service.destroy();
     };
-  }, [config]);
+  }, [service]);
 
   const value = useMemo<WebTrafficContextValue>(
     () => ({
-      trackEvent: (name: string, properties?: Record<string, unknown>) => {
-        return webTrafficService.trackEvent(name, properties);
-      },
-      trackPageView: (path?: string) => {
-        return webTrafficService.trackPageView(path);
-      },
-      isInitialized: webTrafficService.isInitialized(),
+      trackEvent: (name, properties) => service.trackEvent(name, properties),
+      trackPageView: (path) => service.trackPageView(path),
+      isInitialized: service.isInitialized(),
       config,
     }),
-    [config]
+    [service, config],
   );
 
   return <WebTrafficContext.Provider value={value}>{children}</WebTrafficContext.Provider>;
 }
-
-export { WebTrafficContext };

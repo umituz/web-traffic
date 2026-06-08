@@ -8,6 +8,11 @@ import type {
   AnalyticsQuery,
 } from '../../domains/analytics/repositories/analytics.repository.interface';
 import type { AnalyticsData } from '../../domains/analytics/entities/analytics.entity';
+import { createHttpClient, HttpError, type HttpClient } from '../http-client';
+import {
+  HTTP_REQUEST_TIMEOUT_MS,
+  HTTP_RETRY_ATTEMPTS,
+} from '../../shared/config';
 
 export interface HTTPAnalyticsConfig {
   readonly apiUrl: string;
@@ -15,29 +20,30 @@ export interface HTTPAnalyticsConfig {
 }
 
 export class HTTPAnalyticsRepository implements IAnalyticsRepository {
-  constructor(private readonly config: HTTPAnalyticsConfig) {}
+  private readonly http: HttpClient;
+
+  constructor(config: HTTPAnalyticsConfig) {
+    this.http = createHttpClient(
+      config.apiUrl,
+      { 'X-API-Key': config.apiKey },
+      { defaultTimeoutMs: HTTP_REQUEST_TIMEOUT_MS, defaultRetries: HTTP_RETRY_ATTEMPTS },
+    );
+  }
 
   async getAnalytics(query: AnalyticsQuery): Promise<AnalyticsData | null> {
+    const params = new URLSearchParams({
+      start_date: query.startDate.toISOString(),
+      end_date: query.endDate.toISOString(),
+      ...(query.path ? { path: query.path } : {}),
+    });
+
     try {
-      const params = new URLSearchParams({
-        start_date: query.startDate.toISOString(),
-        end_date: query.endDate.toISOString(),
-        ...(query.path && { path: query.path }),
-      });
-
-      const response = await fetch(`${this.config.apiUrl}/analytics?${params}`, {
-        headers: {
-          'X-API-Key': this.config.apiKey,
-        },
-      });
-
-      if (!response.ok) {
+      return await this.http.request<AnalyticsData>(`/analytics?${params.toString()}`);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
         return null;
       }
-
-      return await response.json();
-    } catch {
-      return null;
+      throw error;
     }
   }
 

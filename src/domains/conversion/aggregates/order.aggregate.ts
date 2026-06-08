@@ -1,85 +1,113 @@
 /**
  * Order Aggregate Root
- * @description Manages conversion order and its items
+ * @description Manages a conversion order and its line items
  */
 
-import type { OrderItem, OrderItemCreateInput } from '../entities/order-item.entity';
-import type { EventId } from '../../tracking/value-objects/event-id.vo';
+import { OrderItem } from '../entities/order-item.entity';
 import { Money } from '../value-objects/money.vo';
-import { createOrderItem } from '../entities/order-item.entity';
+import { EventId } from '../../tracking/value-objects/event-id.vo';
+import { SessionId } from '../../tracking/value-objects/session-id.vo';
 
 export interface OrderCreateInput {
-  sessionId: string;
+  id?: EventId;
+  sessionId: SessionId;
   orderId: string;
-  items: Array<{
-    id: string;
-    name: string;
-    price: number;
-    quantity: number;
-  }>;
+  items: ReadonlyArray<{ id: string; name: string; price: number; quantity: number }>;
   currency?: string;
+}
+
+export interface OrderState {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly orderId: string;
+  readonly items: ReadonlyArray<ReturnType<OrderItem['toJSON']>>;
+  readonly total: ReturnType<Money['toJSON']>;
+  readonly createdAt: number;
 }
 
 export class Order {
   readonly id: EventId;
-  readonly sessionId: string;
+  readonly sessionId: SessionId;
   readonly orderId: string;
-  private items: OrderItem[];
-  private total: Money;
   readonly createdAt: number;
+  private readonly items: ReadonlyArray<OrderItem>;
+  private readonly total: Money;
 
-  constructor(input: OrderCreateInput & { id: EventId }) {
+  private constructor(input: {
+    id: EventId;
+    sessionId: SessionId;
+    orderId: string;
+    items: ReadonlyArray<OrderItem>;
+    total: Money;
+    createdAt: number;
+  }) {
     this.id = input.id;
     this.sessionId = input.sessionId;
     this.orderId = input.orderId;
-    this.createdAt = Date.now();
-    this.items = [];
+    this.items = input.items;
+    this.total = input.total;
+    this.createdAt = input.createdAt;
+  }
 
-    // Calculate total and create items
-    let totalAmount = 0;
-    for (const item of input.items) {
-      const createInput: OrderItemCreateInput = {
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-      };
-      const orderItem = createOrderItem(createInput);
-      this.items.push(orderItem);
-      totalAmount += item.price * item.quantity;
-    }
+  static create(input: OrderCreateInput): Order {
+    if (!input.orderId) throw new Error('Order id is required');
+    if (input.items.length === 0) throw new Error('Order must have at least one item');
 
-    this.total = new Money(totalAmount, input.currency);
+    const items = input.items.map((item) => OrderItem.create(item));
+    const currency = input.currency ?? 'USD';
+    const total = items.reduce(
+      (acc, item) => acc.add(Money.of(item.getSubtotal(), currency)),
+      Money.zero(currency),
+    );
 
-    Object.freeze(this.items);
-    Object.freeze(this.id);
-    Object.freeze(this.sessionId);
-    Object.freeze(this.orderId);
-    Object.freeze(this.createdAt);
+    return new Order({
+      id: input.id ?? EventId.generate(),
+      sessionId: input.sessionId,
+      orderId: input.orderId,
+      items,
+      total,
+      createdAt: Date.now(),
+    });
+  }
+
+  static fromState(state: OrderState): Order {
+    const items = state.items.map((item) => OrderItem.create(item));
+    return new Order({
+      id: EventId.of(state.id),
+      sessionId: SessionId.of(state.sessionId),
+      orderId: state.orderId,
+      items,
+      total: Money.of(state.total.amount, state.total.currency),
+      createdAt: state.createdAt,
+    });
   }
 
   getTotal(): Money {
     return this.total;
   }
 
-  getItems(): OrderItem[] {
-    return [...this.items];
+  getItems(): ReadonlyArray<OrderItem> {
+    return this.items;
   }
 
   getItemCount(): number {
+    return this.items.length;
+  }
+
+  getTotalQuantity(): number {
     return this.items.reduce((sum, item) => sum + item.quantity, 0);
   }
 
   isValid(): boolean {
-    return this.items.length > 0 && this.total.getAmount() > 0;
+    return this.items.length > 0 && this.total.isPositive();
   }
 
-  toJSON() {
+  toJSON(): OrderState {
     return {
       id: this.id.toString(),
-      sessionId: this.sessionId,
+      sessionId: this.sessionId.toString(),
       orderId: this.orderId,
-      items: this.getItems(),
+      items: this.items.map((item) => item.toJSON()),
       total: this.total.toJSON(),
       createdAt: this.createdAt,
     };

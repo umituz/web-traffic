@@ -6,61 +6,94 @@
 import type { Pageview } from '../entities/pageview.entity';
 import type { Event } from '../entities/event.entity';
 import { SessionId } from '../value-objects/session-id.vo';
-import type { SiteId } from '../../affiliate/value-objects/site-id.vo';
-import type { DeviceInfo } from '../value-objects/device-info.vo';
+import { SiteId } from '../../affiliate/value-objects/site-id.vo';
+import { DeviceInfo } from '../value-objects/device-info.vo';
+import { DeviceId } from '../value-objects/device-id.vo';
+import { SESSION_INACTIVITY_TIMEOUT_MS } from '../../../shared/config';
+import { elapsedMilliseconds } from '../../../shared/calculations';
+
+export { SESSION_INACTIVITY_TIMEOUT_MS as DEFAULT_SESSION_TIMEOUT_MS };
 
 export interface SessionCreateInput {
-  deviceId: string;
+  id: SessionId;
+  deviceId: DeviceId;
   siteId: SiteId;
   deviceInfo: DeviceInfo;
   startTime?: number;
 }
 
+export interface SessionState {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly siteId: string;
+  readonly deviceInfo: ReturnType<DeviceInfo['toJSON']>;
+  readonly startTime: number;
+  readonly endTime: number | null;
+  readonly eventCount: number;
+  readonly pageviewCount: number;
+  readonly entryPage: string | null;
+  readonly exitPage: string | null;
+}
+
 export class Session {
   readonly id: SessionId;
-  readonly deviceId: string;
+  readonly deviceId: DeviceId;
   readonly siteId: SiteId;
   readonly deviceInfo: DeviceInfo;
   readonly startTime: number;
-  private endTime: number | null;
-  private events: Event[];
-  private pageviews: Pageview[];
-  private entryPage: string | null;
-  private exitPage: string | null;
+  private endTime: number | null = null;
+  private readonly events: Event[] = [];
+  private readonly pageviews: Pageview[] = [];
+  private entryPage: string | null = null;
+  private exitPage: string | null = null;
 
-  constructor(input: SessionCreateInput & { id: SessionId }) {
+  private constructor(input: SessionCreateInput) {
     this.id = input.id;
     this.deviceId = input.deviceId;
     this.siteId = input.siteId;
     this.deviceInfo = input.deviceInfo;
     this.startTime = input.startTime ?? Date.now();
-    this.endTime = null;
-    this.events = [];
-    this.pageviews = [];
-    this.entryPage = null;
-    this.exitPage = null;
-    Object.freeze(this.id);
-    Object.freeze(this.deviceId);
-    Object.freeze(this.siteId);
-    Object.freeze(this.deviceInfo);
-    Object.freeze(this.startTime);
   }
 
-  // Aggregate root methods - maintain consistency
-  addEvent(event: Event): void {
-    if (this.isExpired()) {
-      throw new Error('Cannot add event to expired session');
+  static create(input: SessionCreateInput): Session {
+    return new Session(input);
+  }
+
+  static fromState(state: SessionState): Session {
+    const session = new Session({
+      id: SessionId.of(state.id),
+      deviceId: DeviceId.of(state.deviceId),
+      siteId: SiteId.of(state.siteId),
+      deviceInfo: DeviceInfo.create({
+        browser: state.deviceInfo.browser,
+        os: state.deviceInfo.os,
+        deviceType: state.deviceInfo.deviceType,
+        screenSize: state.deviceInfo.screenSize,
+      }),
+      startTime: state.startTime,
+    });
+    session.endTime = state.endTime;
+    session.entryPage = state.entryPage;
+    session.exitPage = state.exitPage;
+    for (let i = 0; i < state.eventCount; i++) {
+      session.events.push(undefined as never);
     }
+    for (let i = 0; i < state.pageviewCount; i++) {
+      session.pageviews.push(undefined as never);
+    }
+    return session;
+  }
+
+  addEvent(event: Event): void {
+    this.assertOpen();
     this.events.push(event);
   }
 
   addPageview(pageview: Pageview): void {
-    if (this.isExpired()) {
-      throw new Error('Cannot add pageview to expired session');
-    }
+    this.assertOpen();
     this.pageviews.push(pageview);
     this.exitPage = pageview.path;
-    if (!this.entryPage) {
+    if (this.entryPage === null) {
       this.entryPage = pageview.path;
     }
   }
@@ -73,39 +106,26 @@ export class Session {
     return this.exitPage;
   }
 
-  getSiteId(): SiteId {
-    return this.siteId;
-  }
-
-  getVisitorId(): string {
-    return this.deviceId;
-  }
-
-  getDeviceInfo(): DeviceInfo {
-    return this.deviceInfo;
-  }
-
   close(): void {
-    if (this.endTime) {
+    if (this.endTime !== null) {
       throw new Error('Session already closed');
     }
     this.endTime = Date.now();
   }
 
-  isExpired(timeoutMs: number = 30 * 60 * 1000): boolean {
-    if (this.endTime) {
+  isExpired(timeoutMs: number = SESSION_INACTIVITY_TIMEOUT_MS): boolean {
+    if (this.endTime !== null) {
       return true;
     }
-    return Date.now() - this.startTime > timeoutMs;
+    return elapsedMilliseconds(this.startTime) > timeoutMs;
   }
 
-  isActive(timeoutMs: number = 30 * 60 * 1000): boolean {
+  isActive(timeoutMs: number = SESSION_INACTIVITY_TIMEOUT_MS): boolean {
     return !this.isExpired(timeoutMs);
   }
 
   getDuration(): number {
-    const end = this.endTime ?? Date.now();
-    return end - this.startTime;
+    return elapsedMilliseconds(this.startTime, this.endTime ?? Date.now());
   }
 
   getEventCount(): number {
@@ -116,18 +136,18 @@ export class Session {
     return this.pageviews.length;
   }
 
-  getEvents(): Event[] {
+  getEvents(): ReadonlyArray<Event> {
     return [...this.events];
   }
 
-  getPageviews(): Pageview[] {
+  getPageviews(): ReadonlyArray<Pageview> {
     return [...this.pageviews];
   }
 
-  toJSON() {
+  toJSON(): SessionState {
     return {
       id: this.id.toString(),
-      deviceId: this.deviceId,
+      deviceId: this.deviceId.toString(),
       siteId: this.siteId.toString(),
       deviceInfo: this.deviceInfo.toJSON(),
       startTime: this.startTime,
@@ -136,7 +156,12 @@ export class Session {
       pageviewCount: this.pageviews.length,
       entryPage: this.entryPage,
       exitPage: this.exitPage,
-      duration: this.getDuration(),
     };
+  }
+
+  private assertOpen(): void {
+    if (this.isExpired()) {
+      throw new Error('Session is closed or expired');
+    }
   }
 }

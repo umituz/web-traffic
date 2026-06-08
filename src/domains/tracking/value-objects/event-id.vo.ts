@@ -1,39 +1,26 @@
 /**
  * EventId Value Object
- * @description Immutable value object for event identification
+ * @description Immutable typed identifier for a tracked event
  */
 
-export class EventId {
-  private readonly value: string;
+import { BrandedId } from '../../shared/branded-id';
+import { assertHasPrefix } from '../../../shared/validation';
 
-  constructor(value: string) {
-    if (!value || value.trim().length === 0) {
-      throw new Error('EventId cannot be empty');
-    }
-    if (!value.startsWith('event-')) {
-      throw new Error('EventId must start with "event-"');
-    }
-    this.value = value;
-    Object.freeze(this);
+export class EventId extends BrandedId {
+  protected static override readonly BRAND: symbol = Symbol('EventId');
+  private static readonly PREFIX = 'event-';
+
+  private constructor(value: string) {
+    super(value);
   }
 
-  equals(other: EventId): boolean {
-    return this.value === other.value;
-  }
-
-  toString(): string {
-    return this.value;
-  }
-
-  getValue(): string {
-    return this.value;
+  static of(value: string): EventId {
+    BrandedId.validate(value, { prefix: EventId.PREFIX });
+    assertHasPrefix(value, EventId.PREFIX);
+    return new EventId(value);
   }
 
   static generate(): EventId {
-    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-    const id = `event-${uniqueId}`;
-    return new EventId(id);
+    return new EventId(BrandedId.withPrefix(EventId.PREFIX));
   }
 }
