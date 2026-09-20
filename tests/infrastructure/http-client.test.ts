@@ -98,3 +98,52 @@ test('HttpClient - serializes body as JSON', async () => {
   await client.request('/x', { method: 'POST', body: { hello: 'world' } });
   assert.equal(capturedBody, JSON.stringify({ hello: 'world' }));
 });
+
+test('HttpClient - external abort rejects immediately with AbortError (no retry, no timeout label)', async () => {
+  let calls = 0;
+  globalThis.fetch = (async (_url, init) => {
+    calls++;
+    return new Promise((_, reject) => {
+      const signal = (init as RequestInit).signal;
+      signal?.addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      });
+    });
+  }) as typeof fetch;
+
+  const client = createHttpClient('https://api.example.com', {}, {
+    defaultTimeoutMs: 5000,
+    defaultRetries: 3,
+    defaultRetryBackoffMs: 1,
+  });
+
+  const controller = new AbortController();
+  const pending = client.request('/x', { signal: controller.signal });
+  controller.abort();
+
+  await assert.rejects(pending, (err: unknown) => {
+    return err instanceof DOMException && err.name === 'AbortError';
+  });
+  assert.equal(calls, 1, 'caller abort must not be retried');
+});
+
+test('HttpClient - timeout abort still classified as HttpTimeoutError', async () => {
+  let calls = 0;
+  globalThis.fetch = (async (_url, init) => {
+    calls++;
+    return new Promise((_, reject) => {
+      const signal = (init as RequestInit).signal;
+      signal?.addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      });
+    });
+  }) as typeof fetch;
+
+  const client = createHttpClient('https://api.example.com', {}, {
+    defaultTimeoutMs: 20,
+    defaultRetries: 0,
+  });
+  await assert.rejects(client.request('/x'), (err: unknown) => {
+    return err instanceof HttpTimeoutError;
+  });
+});

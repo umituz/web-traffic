@@ -22,6 +22,7 @@ export class SessionManager {
   constructor(
     private readonly sessionRepo: ISessionRepository,
     private readonly deviceIdProvider: () => DeviceId,
+    private readonly siteIdProvider: () => SiteId = () => SiteId.generate(),
   ) {}
 
   getCurrent(): Session | null {
@@ -97,7 +98,7 @@ export class SessionManager {
     const session = Session.create({
       id: SessionId.generate(),
       deviceId,
-      siteId: SiteId.generate(),
+      siteId: this.siteIdProvider(),
       deviceInfo: this.detectDeviceInfo(),
     });
     await this.sessionRepo.save(session);

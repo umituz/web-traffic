@@ -75,15 +75,20 @@ export function createHttpClient(
         }
 
         const controller = new AbortController();
-        const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+        let timedOut = false;
+        const timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
 
         const externalSignal = options.signal;
+        const onExternalAbort = () => controller.abort();
         if (externalSignal) {
           if (externalSignal.aborted) {
             clearTimeout(timeoutHandle);
             throw new DOMException('Aborted', 'AbortError');
           }
-          externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+          externalSignal.addEventListener('abort', onExternalAbort, { once: true });
         }
 
         try {
@@ -115,6 +120,10 @@ export function createHttpClient(
           clearTimeout(timeoutHandle);
 
           if (error instanceof DOMException && error.name === 'AbortError') {
+            // Caller-initiated cancellation is never a timeout and never retried.
+            if (!timedOut) {
+              throw error;
+            }
             lastError = new HttpTimeoutError(timeoutMs);
           } else {
             lastError = error;
@@ -123,6 +132,8 @@ export function createHttpClient(
           if (error instanceof HttpError && !isRetryableStatus(error.status)) {
             throw error;
           }
+        } finally {
+          externalSignal?.removeEventListener('abort', onExternalAbort);
         }
       }
 

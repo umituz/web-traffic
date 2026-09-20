@@ -23,6 +23,7 @@ import {
   SessionClosedEvent,
 } from '../../domains/tracking/events/tracking.events';
 import { DEFAULT_ANALYTICS_API_URL } from '../../shared/config';
+import { SiteId } from '../../domains/affiliate/value-objects/site-id.vo';
 
 export type { HTTPRepositoryConfig, HTTPAnalyticsConfig, TrackingCommandResult };
 
@@ -31,6 +32,12 @@ export interface WebTrafficConfig {
   readonly apiUrl?: string;
   readonly autoTrack?: boolean;
   readonly sessionTimeoutMs?: number;
+  /**
+   * Stable site identifier (`site-` prefixed, e.g. `site-my-saas`).
+   * Sessions are tagged with this ID so the backend can group analytics
+   * per site. When omitted, a random ID is generated per session.
+   */
+  readonly siteId?: string;
 }
 
 export class WebTrafficService {
@@ -67,6 +74,7 @@ export class WebTrafficService {
     this.sessionManager = new SessionManager(
       this.sessionRepo,
       () => this.deviceIdProvider!.getOrCreate(),
+      config.siteId !== undefined ? () => SiteId.of(config.siteId as string) : undefined,
     );
 
     this.commandService = new TrackingCommandService(
