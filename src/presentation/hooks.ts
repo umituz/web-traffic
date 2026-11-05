@@ -91,6 +91,6 @@ export function useAnalytics(query: AnalyticsQuery): UseAnalyticsResult {
     data,
     loading,
     error,
-    refetch: () => setReloadToken((token) => token + 1),
+    refetch: () => setReloadToken((token: number) => token + 1),
   };
 }
