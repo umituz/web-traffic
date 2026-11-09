@@ -94,22 +94,22 @@ export class DeviceInfo {
 function parseBrowser(userAgent: string): BrowserInfo {
   const edgeMatch = userAgent.match(/Edg\/(\d+\.\d+\.\d+\.\d+)/);
   if (edgeMatch) {
-    return { name: 'Edge', version: edgeMatch[1] };
+    return { name: 'Edge', version: edgeMatch[1] ?? null };
   }
 
   const firefoxMatch = userAgent.match(/Firefox\/(\d+\.\d+)/);
   if (firefoxMatch) {
-    return { name: 'Firefox', version: firefoxMatch[1] };
+    return { name: 'Firefox', version: firefoxMatch[1] ?? null };
   }
 
   const chromeMatch = userAgent.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
   if (chromeMatch) {
-    return { name: 'Chrome', version: chromeMatch[1] };
+    return { name: 'Chrome', version: chromeMatch[1] ?? null };
   }
 
   const safariMatch = userAgent.match(/Version\/(\d+\.\d+)/);
   if (safariMatch && userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
-    return { name: 'Safari', version: safariMatch[1] };
+    return { name: 'Safari', version: safariMatch[1] ?? null };
   }
 
   return { name: null, version: null };
@@ -118,22 +118,22 @@ function parseBrowser(userAgent: string): BrowserInfo {
 function parseOS(userAgent: string): OSInfo {
   if (/iPhone|iPad|iPod/i.test(userAgent)) {
     const iosMatch = userAgent.match(/(?:iPhone|iPad|iPod)\s*(?:OS|CPU OS)\s*(\d+[._]\d+)/);
-    return { name: 'iOS', version: iosMatch ? iosMatch[1].replace('_', '.') : null };
+    return { name: 'iOS', version: iosMatch ? (iosMatch[1] ?? '').replace('_', '.') : null };
   }
 
   const windowsMatch = userAgent.match(/Windows NT (\d+\.\d+)/);
   if (windowsMatch) {
-    return { name: 'Windows', version: windowsMatch[1] };
+    return { name: 'Windows', version: windowsMatch[1] ?? null };
   }
 
   if (/Macintosh|Mac OS X/i.test(userAgent) && !/iPhone|iPad|iPod/i.test(userAgent)) {
     const macMatch = userAgent.match(/Mac OS X (\d+[._]\d+)/);
-    return { name: 'macOS', version: macMatch ? macMatch[1].replace('_', '.') : null };
+    return { name: 'macOS', version: macMatch ? (macMatch[1] ?? '').replace('_', '.') : null };
   }
 
   const androidMatch = userAgent.match(/Android (\d+\.\d+)/);
   if (androidMatch) {
-    return { name: 'Android', version: androidMatch[1] };
+    return { name: 'Android', version: androidMatch[1] ?? null };
   }
 
   if (userAgent.includes('Linux')) {
